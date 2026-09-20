@@ -1,3 +1,11 @@
 name = "linear-sync"
 main = "src/index.js"
 compatibility_date = "2026-09-21"
+
+# secrets 用 `wrangler secret put <NAME>` 写入，不要提交到仓库：
+#   LINEAR_API_KEY / NOTION_TOKEN / NOTION_DATABASE_ID
+# 可选变量（非敏感，可放 [vars]）：
+#   LINEAR_TEAM_KEY / NOTION_VERSION / SYNC_TOKEN
+
+[observability]
+enabled = true
