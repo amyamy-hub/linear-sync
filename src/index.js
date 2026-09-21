@@ -25,8 +25,9 @@ const DEFAULT_NOTION_VERSION = "2022-06-28";
 
 const PAGE_SIZE = 50;
 const MAX_ISSUES = 500;
-// rich_text 单个 text.content 上限 2000，留出余量
-const TEXT_LIMIT = 1900;
+// Notion 单个 text.content 上限 2000 字符；rich_text 数组上限 100 项
+const TEXT_LIMIT = 2000;
+const TEXT_CHUNKS_LIMIT = 100;
 
 const ISSUES_QUERY = `
   query SyncIssues($first: Int!, $after: String) {
@@ -66,6 +67,18 @@ function clip(value) {
 function richText(content) {
   const value = clip(content);
   return value ? [{ type: "text", text: { content: value } }] : [];
+}
+
+// 长文本按 2000 字符切片放进多个 rich_text 项，避免截断丢内容
+function richTextChunks(content) {
+  const value = content === null || content === undefined ? "" : String(content);
+  if (!value) return [];
+
+  const chunks = [];
+  for (let i = 0; i < value.length && chunks.length < TEXT_CHUNKS_LIMIT; i += TEXT_LIMIT) {
+    chunks.push({ type: "text", text: { content: value.slice(i, i + TEXT_LIMIT) } });
+  }
+  return chunks;
 }
 
 function missingConfig(env) {
@@ -170,7 +183,7 @@ function toProperties(issue) {
     },
     URL: { url: issue.url ?? null },
     "Updated At": { date: issue.updatedAt ? { start: issue.updatedAt } : null },
-    Description: { rich_text: richText(issue.description) },
+    Description: { rich_text: richTextChunks(issue.description) },
   };
 }
 
