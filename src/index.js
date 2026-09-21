@@ -29,6 +29,10 @@ const MAX_ISSUES = 500;
 const TEXT_LIMIT = 2000;
 const TEXT_CHUNKS_LIMIT = 100;
 
+// 去重查询的重试策略，用于等待 Notion 查询索引追平刚写入的页面
+const LOOKUP_ATTEMPTS = 3;
+const LOOKUP_RETRY_MS = 1500;
+
 const ISSUES_QUERY = `
   query SyncIssues($first: Int!, $after: String) {
     issues(first: $first, after: $after, orderBy: updatedAt) {
@@ -83,6 +87,10 @@ function richTextChunks(content) {
 
 function missingConfig(env) {
   return REQUIRED_CONFIG.filter((key) => !env[key]);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 // ---------- Linear ----------
@@ -188,14 +196,21 @@ function toProperties(issue) {
 }
 
 async function findByLinearId(env, linearId) {
-  const data = await notion(env, `/databases/${env.NOTION_DATABASE_ID}/query`, {
-    method: "POST",
-    body: JSON.stringify({
-      filter: { property: "Linear ID", rich_text: { equals: linearId } },
-      page_size: 1,
-    }),
-  });
-  return data.results?.[0] ?? null;
+  // Notion 的查询索引对刚写入的页面有约 1 秒的可见延迟（实测 1.14s）。
+  // 查不到时不能立刻当作"不存在"，否则连续多次同步会重复建页。这里重试等待索引追平。
+  for (let attempt = 1; attempt <= LOOKUP_ATTEMPTS; attempt += 1) {
+    const data = await notion(env, `/databases/${env.NOTION_DATABASE_ID}/query`, {
+      method: "POST",
+      body: JSON.stringify({
+        filter: { property: "Linear ID", rich_text: { equals: linearId } },
+        page_size: 1,
+      }),
+    });
+    const page = data.results?.[0];
+    if (page) return page;
+    if (attempt < LOOKUP_ATTEMPTS) await sleep(LOOKUP_RETRY_MS);
+  }
+  return null;
 }
 
 // ---------- 同步主流程 ----------
