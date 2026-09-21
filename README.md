@@ -54,7 +54,7 @@ secrets（用 `wrangler secret put <NAME>` 写入，不要提交到仓库）：
 | `Labels` | multi_select | `issue.labels` |
 | `URL` | url | `issue.url` |
 | `Updated At` | date | `issue.updatedAt` |
-| `Description` | rich_text | `issue.description`（截断到 1900 字符） |
+| `Description` | rich_text | `issue.description`（超 2000 字符按上限自动分片，不截断） |
 
 ## 部署
 
