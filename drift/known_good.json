@@ -23,7 +23,14 @@
     "version_annotations": {"workers/triggered_by": "upload"},
     "how_the_bytes_were_taken": "Deploy 之后**立刻** GET 裸 `/accounts/{a}/workers/scripts/linear-sync`（multipart），取 name=\"index.js\" 那一段（10,860 B），按 `blob <len>\\0` + 内容算 SHA-1 ⇒ 3a698aff59f50f413d217edccc602d1b63258a14，与 `main:src/index.js` 逐字节相同。",
     "three_way_agreement": "dashboard 顶栏同刻显示 `5e011838 (Active) Latest` ＋ CF API `deployments[0].versions[0].version_id = 5e011838…` ＋ 字节哈希等于仓库 blob ⇒ UI／API／哈希三处一致。",
-    "reconfirmed_at_utc": "2026-09-23T17:44:00Z",
+    "reconfirmed_at_utc": "2026-09-23T17:44:10Z",
+    "sampling_sequence_utc": [
+      "2026-09-23T16:53:57Z 部署本身（收据来源）",
+      "2026-09-23T17:44:10Z 全字段复核（距部署 50 分钟）",
+      "2026-09-23T23:41:48Z~23:46:07Z 检测器修复后的七组矩阵（时刻取自证据文件 mtime；距部署约 6.8 小时）",
+      "2026-09-23T23:54:19Z 把推上 main 的脚本+登记下载回来跑 exit=0"
+    ],
+    "sampling_caveat": "⚠️ 17:44Z→23:4xZ 之间有约 6 小时无人观测。两端读数与「服务版本 id / deployments[0].id 未变」只证明期间【没有新部署】，⛔ 不构成连续的「线上没被动过」证明。",
     "reconfirmed_readings": "serving 仍是 #13；etag 仍 b5cc1a50…；裸端点 part 仍 10,860 B / blob 3a698aff…（含 `export default`）；绑定 4×secret_text；deployments=12、versions=13。",
     "validity_window": "⚠️ 「线上 == 仓库」这个等价**只在「最后一次上传 == 服务版本」那一窗成立**。此后任何人做一次 dashboard 保存或 `versions upload`，裸端点读到的就是他那一份 ⇒ 本字段的字节证明**当场作废**，只有 version_id＋etag 仍然可复算。"
   },
