@@ -49,6 +49,8 @@
 
 ⇒ **发 `POST /sync` 之前先 `list_issues` 现算 `fetched` 期望值**，⛔ 别引用上一次算出来的条数。滞后量本身要用 `completedAt`，不要用 `updatedAt`。
 
+> 溯源（有另一家说这条规则"是本轮新加的、不该写成文档早就记着"）：该规则首现于 commit **`863583a6` @ 2026-09-23T04:11:17Z**（北京 12:11），前一版 `a0cea544` 里 0 命中；我 13:40 读到的那版 blob `4e1f9182`（10,587 B）里 `推高对端`/`completedAt` 各命中 1 次。⇒ "文档早就记着、我没引用"这个说法在本轮**成立**；对方引的是自己 00:4x 读的 6,746 B 旧快照。⚠️ 同一条教训反过来也适用：**比 blob 之前先比时间戳**，别拿"我读过的那版"当"当时最新的那版"。
+
 ## 怎么发这一枪（闸门 6 的复现配方）
 
 本机与两个云沙箱都打不到 `*.workers.dev`（SNI 重置 / DNS 黑洞 / MCP 出口策略，三种坏法）。**第三条路已实测：让 Postman 云端替我发。**
@@ -83,6 +85,10 @@ Postman 路线（本轮实际用的，全程 REST，⛔ 不需要桌面客户端
 - **`api.postman.com` 现在挂在 Cloudflare 后面**：用默认 UA `Python-urllib/3.x` 调它 ⇒ **HTTP 403 + Error 1010 "Access denied based on browser signature"**，而同一时刻 curl 的 UA 全通。⇒ 换 HTTP 库先带正常 UA，⛔ 别把 1010 报成"Postman 封号"。
 - **不带 `LIMIT` 的 Notion SQL 只回了 2 行**（同一条查询加 `ORDER BY id LIMIT 20` 回 7 行，`COUNT(*)` 也是 7）。⇒ 行列表**必须配一条 `COUNT(*)` 交叉**，否则会把"读到 2 行"当成"库里只有 2 行"。这类假象比空结果危险，因为它回的是**看起来合理的行**。
 - **`disabled` 的按钮可能只是 spinner**：Delete API Key 那个按钮 `disabled=""` 且 `innerText` 为空（标签在 `aria-label` 上），我据此判"点不动"。实际提交已经发出去了 —— reload 后表为空、同一个 `GET /me` 从 **200 变 401** 才是真凭据。⇒ 状态判定要看**服务端回读**，⛔ 看按钮。
+- **⛔ "Notion 会自动新建 select 选项"这个说法是错的，别再传**（09-23 16:1x 现场重验）。另一家客户端看到库里多了第三个选项 `Done`，归因给"Worker 同步时 Notion 自动建的"，并据此要求把本文件那条改过来。**当场重做的实验否掉了它**：对 AMY-2 那行写一个全新的 select 值 ⇒
+  `400 validation_error / Invalid select value for property "Status": "Qoder-自动建选项验证-勿留-20260923" / Value must be one of the following: "Backlog", "Todo", "Done" / If a new select option is needed, the data source must be updated to add it. / request_id: 4ad8f9d9-19ee-456a-b329-a029c0086c95`
+  ⇒ 被拒、且 Notion 自己要求"要新选项就去改 data source"。`Done` 之所以已在白名单里，是因为**本文件上面记的那次 `ALTER`（09-23 12:2x 北京）**，⛔ 不是同步自动建的。写这次被拒后回读：AMY-2 仍是 `Todo`、库里仍是 7 行、没有垃圾选项。
+  ⚠️ 顺带一条判据教训：**"我看了两次，中间多了个东西"只证明变化发生过，不证明是谁改的**。要说"自动建的"，必须做一次"写一个不存在的值，看它会不会自己长出来"——那才叫实验。
 - **`fill` 进 React 受控输入只改 DOM `value`，不改组件 state** ⇒ 表单看到空值、静默不提交。本轮靠"读按钮的 disabled/spinner"定位到这个，最终用 `evaluate` 走原生 setter 或直接换 UI 路径。
 - **"派子 agent 独立复算"这件事，在 Qoder 上要打个折**：子会话拿不到本会话的 MCP 连接器（实测其 `mcp.json = {}`），所以它只能验 GitHub 一侧（`gh api` 可用），Linear/Notion/Cloudflare 侧一律"无法判"。⇒ 想真独立复算，得**另开一个客户端会话**（有钥匙的那家），⛔ 别用子 agent 冒充第二双眼睛。本轮它仍然有价值：仓库侧 blob `3a698aff59f5…` 与"三分支实况""`mutation` 0 次"都是它自己算的，且它明确写了哪些没验到、没有抄数。
 - **回执 `success:true` 不等于动作发生**（kimi 的 `key_type` 报了 `length:22`，实际页面根本没有那个输入框 —— 它回的是**我传进去的字符串长度**）。
