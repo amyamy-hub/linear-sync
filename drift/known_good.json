@@ -1,0 +1,18 @@
+{
+  "worker": "linear-sync",
+  "account_id": "8cc84c00c1f796bda3efb9004d005e34",
+  "serving_version_id": "2fc04c35-cb89-4b82-a1e7-4c070d8347b8",
+  "serving_version_number": 9,
+  "artifact_etag": "5d4e6aada4d5f2b671a286b88d632c5666d71fe784e7530a66e5ba78a2cb0a4c",
+  "repo_blob_sha1": "3a698aff59f50f413d217edccc602d1b63258a14",
+  "expected_bindings": [
+    "secret_text:LINEAR_API_KEY",
+    "secret_text:NOTION_DATABASE_ID",
+    "secret_text:NOTION_TOKEN",
+    "secret_text:SYNC_TOKEN"
+  ],
+  "recorded_at_utc": "2026-09-23T07:44:53Z",
+  "recorded_by": "Qoder（会话 be967164）",
+  "artifact_kind": "dashboard_quick_editor_pasted_plain_source",
+  "note": "artifact_etag 对应「从看板粘贴纯源码」这一种产物。若将来改用 wrangler/CI 部署，产物会变成 esbuild 打包件、etag 必然不同 ⇒ 要另记一条并把 repo_blob_sha1 换成构建来源证法，不要覆盖本条。"
+}
