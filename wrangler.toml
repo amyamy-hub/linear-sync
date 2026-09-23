@@ -2,10 +2,28 @@ name = "linear-sync"
 main = "src/index.js"
 compatibility_date = "2026-09-21"
 
-# secrets 用 `wrangler secret put <NAME>` 写入，不要提交到仓库：
-#   LINEAR_API_KEY / NOTION_TOKEN / NOTION_DATABASE_ID
-# 可选变量（非敏感，可放 [vars]）：
-#   LINEAR_TEAM_KEY / NOTION_VERSION / SYNC_TOKEN
+# ⚠️ 2026-09-23 改：加 [secrets] required 这道 deploy 前校验，并订正一段误导注释。
+#
+# 为什么加：`wrangler deploy` 要求 secrets.required 里列出的名字**必须已在 Worker 上配好**，
+# 否则命令直接失败并列出缺哪几个。没有这一条时，“少了凭据”会静默部署成功，
+# 表现出来只是 /health 的 missingConfig —— 那是最难查的一类坏法。
+# 出处：developers.cloudflare.com/workers/wrangler/configuration/（secrets 配置项，
+# Cloudflare 2026-03-24 changelog 引入）⇒ ⚠️ 需要 2026-03 之后的 wrangler；
+# 老版本若不认识这个键会当场报错（fail loud，比静默强，可接受）。
+#
+# ⛔ 别把值写进本文件，也⛔ 别改放到 [vars]：这四个都是 secret。
+# 写入方式仍是 `wrangler secret put <NAME>`，或 dashboard 的 Variables and Secrets。
+[secrets]
+required = ["LINEAR_API_KEY", "NOTION_TOKEN", "NOTION_DATABASE_ID", "SYNC_TOKEN"]
 
-[observability]
-enabled = true
+# 关于 secret 的一个常见误解（本轮踩过一次，留此防重犯）：
+# 本文件⛔ 没列出的 secret，**不会**在部署时被清空。`wrangler secret put` 建的 secret
+# 是服务端持有的，部署新版本时自动附加到 env ⇒ “config 里没写 = 会被抹掉”是错的。
+# 真正会被 config 影响的是 kv_namespaces / r2 / d1 那类**声明式绑定**。
+
+# 非敏感的可选变量（这些⛔ 不是 secret，可以放 [vars]）：
+#   LINEAR_TEAM_KEY / NOTION_VERSION
+# ⚠️ 上一版注释把 SYNC_TOKEN 也列在“非敏感可选变量”里——它现在是 secret，
+#    且必须保持 secret（它守卫的是唯一那个能往 Notion 写的入口）。
+# 注：线上目前**没有**任何明文环境变量（settings 的 env 为空），所以本文件对 env
+#    的影响是“无”，不必担心这份注释改动会改变运行时行为。
