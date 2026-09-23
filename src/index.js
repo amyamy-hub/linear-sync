@@ -297,6 +297,29 @@ export default {
       });
     }
 
+    // 只读自检：在 Cloudflare 内部直接跑一次 dryRun，不写 Notion、不经鉴权分支
+    if (pathname === "/selftest") {
+      const missing = missingConfig(env);
+      if (missing.length) {
+        return json({ ok: false, error: "missing_config", missing }, 500);
+      }
+      const startedAt = Date.now();
+      try {
+        const summary = await runSync(env, { dryRun: true, teamKey: "AMY" });
+        return json({
+          ok: true,
+          selftest: true,
+          durationMs: Date.now() - startedAt,
+          fetched: summary.fetched,
+          previewCount: (summary.preview || []).length,
+          errors: summary.errors,
+          syncAuthEnabled: Boolean(env.SYNC_TOKEN),
+        });
+      } catch (error) {
+        return json({ ok: false, selftest: true, error: "selftest_failed", message: error.message }, 502);
+      }
+    }
+
     if (pathname === "/sync") {
       if (request.method !== "POST") {
         return json({ error: "method_not_allowed", hint: "POST /sync" }, 405);
