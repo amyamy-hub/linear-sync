@@ -1,102 +1,130 @@
 # 接手须知（HANDOFF）
 
 > 这个仓、这条链路（Linear ↔ GitHub ↔ Notion ↔ Cloudflare）**以后不止一个 agent 在跑**。
-> 本文件是给下一个会话的入口。⛔ 动手前先读完。改于 2026-09-23 12:1x（北京）。
+> 本文件是给下一个会话的入口。⛔ 动手前先读完。改于 2026-09-23 14:0x（北京）。
 > 另两处交接面：Linear 项目 **P-AMY-1** 顶部横幅、工单 **AMY-6 / AMY-7** 文末记录。
-> ⚠️ 本文件上一版把手机自检的时刻写成了“22:44”，实际是**上午 10:44**（部署 `2026-09-23T02:35:59Z` = 北京 10:35:59，相差 8 分钟）。错因：照搬了前一晚 22:36 那张图的小时数。时刻以本行为准。
+> ⚠️ 时刻口径提醒（本文件栽过一次）：写时刻要拿**部署/回执的 UTC 原文**换北京时间，⛔ 别照抄上一张图的小时数。
 
-## ⭐ 分工原则：按节点插拔，⛔ 按平台性格分工（2026-09-22 用户定）
+## ⭐ 当前状态：闸门 1–6 全部闭环
 
-常见诱惑：“这家负责海外连接器、那家负责国内基建、第三家做归档”。⛔ 不要。
+链路已端到端跑通并且**验收证据来自目标系统回读，不是 Worker 自报**。下一个 agent 若只想复现一次同步，直接看下面「怎么发这一枪」；⛔ 不要从头重查已定案的三条（见「别再重踩」）。
 
-理由（实测）：同一句结论（“github token 只读、写会 403”）在不同客户端会**各自复述、各自当真**——那个错误从 09-20 活到 09-22，被三家各引用一次，直到 `merge_pull_request` 成功才当场碎掉。
+## 分工原则：按节点插拔，⛔ 按平台性格分工（2026-09-22 用户定）
+
+常见诱惑："这家负责海外连接器、那家负责国内基建、第三家做归档"。⛔ 不要。
+
+理由（实测）：同一句结论（"github token 只读、写会 403"）在不同客户端会**各自复述、各自当真**——那个错误从 09-20 活到 09-22，被三家各引用一次，直到 `merge_pull_request` 成功才当场碎掉。
 ⇒ **按平台性格分工，会把错误也一起分工**；按节点插拔才会逼新 agent 自己重测。
 
-⇒ 引入新 agent 的**唯一合法触发条件**是：某个节点真坏了 / 需要替换 / 需要第二视角交叉复算。⛔ 不是“它家有特色”。
+⇒ 引入新 agent 的**唯一合法触发条件**是：某个节点真坏了 / 需要替换 / 需要第二视角交叉复算。⛔ 不是"它家有特色"。
 
 ## 闸门状态（这是本文件唯一允许自己引用的部分）
 
-| 闸门 | 内容 | 状态 | 凭据 |
+| 闸门 | 内容 | 状态 | 凭据（含测于哪一刻） |
 |---|---|---|---|
-| 1 | 仓库定位与分支 | ✅ | 实现在 `main`；⛔ 判“有没有入库”必 `list_branches` |
+| 1 | 仓库定位与分支 | ✅ | 实现在 `main`；⛔ 判"有没有入库"必 `list_branches` |
 | 2 | 线上代码 == 仓库 | ✅ | 双方 blob SHA-1 均为 `3a698aff59f5…`（10,860 B / 365 行；09-23 12:1x 现算） |
 | 3 | 配置在场 | ✅ | `GET .../secrets` 四个名字；`/selftest` 返 `syncAuthEnabled: true` |
 | 4 | 不带密码被拒 | ✅ | 09-22 23:36 手机 `POST /sync` → `{"error":"unauthorized"}` |
-| 5 | Worker 自己能拉到 Linear 并建好映射 | ✅ | 09-23 **10:44** 手机 `GET /selftest` → `{ok:true, fetched:7, previewCount:5, errors:[], syncAuthEnabled:true, durationMs:545}` |
-| **6** | **真写进 Notion（含幂等）** | ⛔ **未做** | 见下两节 |
+| 5 | Worker 能拉到 Linear 并建好映射 | ✅ | 09-23 **10:44** 手机 `GET /selftest` → `{ok:true, fetched:7, previewCount:5, errors:[], syncAuthEnabled:true, durationMs:545}` |
+| **6** | **带密码真写进 Notion，且幂等** | ✅ **09-23 13:49** | Postman 云端 `POST /sync` → **HTTP 200 / 164 B / 2458 ms**；Notion 回读：AMY-6/7 `Status` Backlog→**Done**、AMY-1/5 `Updated At` 前移、AMY-2/3/4 未动；三次运行后 `COUNT(*)` 仍 **7** 且 `COUNT(DISTINCT "Linear ID")` 仍 **7** |
 
-## 闸门 5 证明了什么、⛔ 没证明什么
+## 闸门 6 到底证了什么、⛔ 没证什么（09-23 13:49）
 
-**证明了**：Worker 自己的 `LINEAR_API_KEY` 有效（拉到 7 条，与 Linear 侧独立现读的 7 条对得上）；`SYNC_TOKEN` 在运行时确实有值（不再只是配置面推断）；字段映射对**全部 7 条**都跑通了——因为 `toProperties(issue)` 在 dryRun 分支**之前**执行，不是空转。
+**证了**：鉴权分支放行（401 只会回 26 B 的 `{"error":"unauthorized"}`，实测 164 B）；`runSync` 真跑了 4 次 Notion `PATCH`；逐行写入值与 Linear 的 `updatedAt` 相等 ⇒ `created=0 / updated=4 / failed=0` 是**由状态差集推得**；重复执行不新增行 ⇒ 按 `Linear ID` upsert 成立。
 
-**⛔ 没证明**：它**一次都没碰过 Notion**。而且比“没碰”更强：**`errors` 在 dryRun 下是结构性恒空**——全代码只有 `summary.errors.push(...)` 这一处赋值，而它在 `continue` 跳过的 try/catch 里面。⇒ 无论系统多坏，dryRun 的 `errors` 都是 `[]`、`failed` 都是 0。**这不是证据，是常量。**（此条由另一客户端会话 09-23 指出，比本文件上一版“零证据力”的说法更准确。）
+**⛔ 没证**：Worker 自报的 JSON 数值一个都没拿到 —— Postman monitor **不回传响应体**，只回传 `contentLength`。
 
-⇒ 所以“用 selftest 提前看到 select 报错”这条路**不成立**，闸门 6 必须真写一次才知道。
+**顺手测到一条通则：字节数反推不出计数。** 响应体是 `JSON.stringify(body, null, 2)`，而 `(fetched, created, updated, failed)` 只要都是个位数，`fetched:2/updated:2` 与 `fetched:4/updated:4` 与 `fetched:7/updated:7` 的**长度全都是 164 B**。⇒ ⛔ 别拿"响应大小对得上"当计数正确性的证据（同族：聚合数反推不出逐份数）。想要数就回读目标系统，正好也更硬。
 
-## 闸门 6 的两件事：地雷与最小爆炸半径
+**另一条精度发现**：Notion 把 `Updated At` 的**秒吃掉了** —— Linear `2026-09-22T15:20:06.900Z` 落到 Notion 变 `15:20:00Z`（在 `notion-fetch` 的原始 property 里就是这样，⛔ 不是展示层截断）。⇒ 任何"同步是否落后"的滞后量计算，精度上限是分钟，⛔ 别用毫秒比对。
 
-**地雷**：Notion 那个库（`Linear Issues 同步库`）的 `Status` select 只有 **Backlog / Todo**，没有 `Done`；`Labels` 是 multi_select 且 **options 为空**。而 AMY-6 / AMY-7 在 Linear 里已是 Done。Notion 对未知 select 选项是“自动新增”还是“拒绝”，**至今没人测过**。⚠️ 09-21 那次“14 连发稳定 7 页”不算证据——当时全部 issue 的 Status 都是 Backlog/Todo、labels 全空，**根本没经过这条代码路径**。
+## ⚠️ `since` 的爆炸半径会被 `updatedAt` 批量抬升
 
-**判据（三条同时成立）**：行数仍为 7 **＋** AMY-6/7 的 Status 真变成 Done、Updated At 前进 **＋** 响应体 `failed == 0`。只看“页数不变”会把一次部分失败判成通过。
+本文件上一版算出"`since=2026-09-22T00:00:00Z` 只选中 AMY-6/7 两行"。发枪前现读 Linear：**AMY-1、AMY-5、AMY-7 的 `updatedAt` 全被顶到 `2026-09-23T04:22:10.888Z`**（AMY-7 是 `.725Z`），而 AMY-6 仍停在 09-22 ⇒ 期望值当场从 2 变成 **4**。
 
-**最小爆炸半径——⛔ 不需要改代码**：`POST /sync` 本来就支持 `since`。取 `{"since":"2026-09-22T00:00:00Z","teamKey":"AMY"}` 时，7 条里**只有 AMY-6 与 AMY-7 会被选中**（其余 5 条停在 09-20），而这两条正好就是踩雷的那两条 ⇒ 一次试水的影响面 = 2 行，且返回的 `fetched` 应为 **2**（这本身就是个自检）。
+原因不是悬案，就是本文件「钥匙能力矩阵」里那条：**Issue 正文里出现 `AMY-N` 会被 Linear 自动建关联并推高对端 `updatedAt`**。上一轮往 AMY-7 文末追加记录时点名了 AMY-1/5/7 ⇒ 那几条被"无内容变更"地刷新。AMY-6 没被顶，因为它对 AMY-7 的关联早已存在（这条推论与观测一致，但⛔ 未单独复测）。
 
-**但闸门 6 目前真正的堵点不是地雷，是出口**：它需要一发带 `Authorization` 头的 POST，而手机浏览器发不出、本机与云沙箱出不去（见下表）。⇒ 要么手机装一个能跑 curl 的 shell（Termux），要么等一台有出口的机器；⛔ 不要为了绕这个而给 Worker 加“无鉴权写”入口。
+⇒ **发 `POST /sync` 之前先 `list_issues` 现算 `fetched` 期望值**，⛔ 别引用上一次算出来的条数。滞后量本身要用 `completedAt`，不要用 `updatedAt`。
 
-## 现在到底是什么状态
+## 怎么发这一枪（闸门 6 的复现配方）
 
-- Worker 已上线：`https://linear-sync.amy4399666.workers.dev/`，`GET /health` 返 `ok:true`、`missingConfig: []`。
-- 它做的事：**主动拉** Linear 的 issue（GraphQL），按 `Linear ID` upsert 进 Notion 数据库。**⛔ 没有入站 webhook，⛔ 不写 Linear**。
-- `POST /sync` 已加鉴权（不带 `Authorization: Bearer $SYNC_TOKEN` → 401，实测）。
-- `GET /selftest` 是**无鉴权只读探针**：跑一次 dryRun，⛔ 不写 Notion，但会吃 Linear API 配额并泄露 `fetched` 这个数。它是目前**唯一不需要出口就能验收闸门 3/5 的手段**（手机打开一个链接即可）。
-
-## 带密码怎么发（闸门 6 就靠它）
+本机与两个云沙箱都打不到 `*.workers.dev`（SNI 重置 / DNS 黑洞 / MCP 出口策略，三种坏法）。**第三条路已实测：让 Postman 云端替我发。**
 
 ```bash
+# 有正常出口的机器上（首选，最直接）
 curl -X POST https://linear-sync.amy4399666.workers.dev/sync \
   -H 'content-type: application/json' \
   -H "authorization: Bearer $SYNC_TOKEN" \
   -d '{"teamKey":"AMY","since":"2026-09-22T00:00:00Z"}'
 ```
 
-先加 `"dryRun":true` 跑一次看映射，再去掉跑正式同步。期望 `fetched:2`。⚠️ 头必须叫 `authorization`、值必须是 `Bearer ` + 原文比较，**大小写敏感、不多不少一个空格**。看到 401 先查自己有没有带头，那是锁在正常工作，⛔ 不是“同步坏了”。
+Postman 路线（本轮实际用的，全程 REST，⛔ 不需要桌面客户端）：
 
-## 三条“别再重踩”的实测结论
+1. 控制台 `Settings → API keys → Generate`。**值只在创建那一瞬可见**：立刻从 DOM 的 `<input>.value` 取，⛔ 别刷新页面 —— 本轮就是先 `location.reload()` 了才发现表格只剩 `PMAK-…-XXXX`，只能 Regenerate 重来。
+2. `POST /collections?workspace=<id>` 建集合；请求头用 `Bearer {{SYNC_TOKEN}}`，体是 raw JSON。
+3. `POST /environments` 建环境，变量 `type:"secret"`。
+4. **`POST /monitors/{uid}/run` 才是云端执行器** —— 旧的 `POST /run/collection/{id}` 在 `api.postman.com` 上已经 **404**（三个变体全 404，实测）。
+5. Monitor 创建有三个必填坑：`timezone` 必须放在 **`schedule` 里面**（放顶层或 query 参数都会报 `paramMissing`）；cron 有**白名单**（`0 0 1 1 *` 被拒，`0 17 * * *` 过）；`environment` ⛔ 不许为空。
+6. ⛔ **用完必须删 monitor** —— 它带日跑 cron，留着就是无人值守往 Notion 写。本轮删后回读 `GET /monitors` → `[]`。
 
-1. **判“代码有没有入库”必须 `list_branches`。** 09-20 起实现全在 `demo/sync-skeleton`，而 `main` 只有一个 16 行 README 骨架——这个假象骗了两个会话两天。
-2. **“线上代码 == 仓库”要算哈希，⛔ 别看版本号。** 拉 `GET /accounts/{acct}/workers/scripts/linear-sync` 的 multipart 正文，按 `blob <len>\0` 算 SHA-1。`VERSION="0.2.0"` 从 `ac9b352` 起就没 bump，证不了构建。
-3. **“GitHub↔Linear↔Notion 三向循环”这个担心已被实测否定。** Worker 全文 `mutation` 命中 0 次；Two-way 开启后两侧新增镜像对象 0 条。⛔ 别再为此写“护栏”代码——真该补的是**部署自动化**（见下）。
+**结果只给 `contentLength`，不给 body** ⇒ 验收必须回到 Notion/Linear 侧现读（本来也更硬）。
+
+## 三条"别再重踩"的实测结论
+
+1. **判"代码有没有入库"必须 `list_branches`。** 09-20 起实现全在 `demo/sync-skeleton`，而 `main` 只有一个 16 行 README 骨架——这个假象骗了两个会话两天。
+2. **"线上代码 == 仓库"要算哈希，⛔ 别看版本号。** 拉 `GET /accounts/{acct}/workers/scripts/linear-sync` 的 multipart 正文，按 `blob <len>\0` 算 SHA-1。`VERSION="0.2.0"` 从 `ac9b352` 起就没 bump，证不了构建。
+3. **"GitHub↔Linear↔Notion 三向循环"这个担心已被实测否定。** Worker 全文 `mutation` 命中 0 次；Two-way 开启后两侧新增镜像对象 0 条。⛔ 别再为此写"护栏"代码——真该补的是**部署自动化**（见下）。
+
+## 量具级教训（本轮新增，都是"看着像结论其实是自己的工具坏了"）
+
+- **`api.postman.com` 现在挂在 Cloudflare 后面**：用默认 UA `Python-urllib/3.x` 调它 ⇒ **HTTP 403 + Error 1010 "Access denied based on browser signature"**，而同一时刻 curl 的 UA 全通。⇒ 换 HTTP 库先带正常 UA，⛔ 别把 1010 报成"Postman 封号"。
+- **不带 `LIMIT` 的 Notion SQL 只回了 2 行**（同一条查询加 `ORDER BY id LIMIT 20` 回 7 行，`COUNT(*)` 也是 7）。⇒ 行列表**必须配一条 `COUNT(*)` 交叉**，否则会把"读到 2 行"当成"库里只有 2 行"。这类假象比空结果危险，因为它回的是**看起来合理的行**。
+- **`disabled` 的按钮可能只是 spinner**：Delete API Key 那个按钮 `disabled=""` 且 `innerText` 为空（标签在 `aria-label` 上），我据此判"点不动"。实际提交已经发出去了 —— reload 后表为空、同一个 `GET /me` 从 **200 变 401** 才是真凭据。⇒ 状态判定要看**服务端回读**，⛔ 看按钮。
+- **`fill` 进 React 受控输入只改 DOM `value`，不改组件 state** ⇒ 表单看到空值、静默不提交。本轮靠"读按钮的 disabled/spinner"定位到这个，最终用 `evaluate` 走原生 setter 或直接换 UI 路径。
+- **回执 `success:true` 不等于动作发生**（kimi 的 `key_type` 报了 `length:22`，实际页面根本没有那个输入框 —— 它回的是**我传进去的字符串长度**）。
+
+## 现在到底是什么状态
+
+- Worker 已上线：`https://linear-sync.amy4399666.workers.dev/`，`GET /health` 返 `ok:true`、`missingConfig: []`。
+- 它做的事：**主动拉** Linear 的 issue（GraphQL），按 `Linear ID` upsert 进 Notion 数据库。**⛔ 没有入站 webhook，⛔ 不写 Linear**。
+- `POST /sync` 有鉴权且**正反两面都已实测**：不带 → 401（手机，09-22 23:36）；带对 → 200 + 真写（Postman 云端，09-23 13:49）。
+- `GET /selftest` 是**无鉴权只读探针**：跑一次 dryRun，⛔ 不写 Notion，但会吃 Linear API 配额并泄露 `fetched` 这个数。它是唯一不需要出口就能验收闸门 3/5 的手段（手机打开一个链接即可）。⚠️ 它的 `errors:[]` 与 `failed:0` 在 dryRun 下是**结构性常量**，⛔ 不是证据。
+
+## 还欠着的两件事
+
+1. **`SYNC_TOKEN` 未轮换。** 现值出现在本机会话日志里（同一值 16 处），也短暂进过 Postman 环境（该环境已删）。本轮**故意没有轮换**：换完就没法验证，而"一把没人验过的锁"比"一把已知泄露面的锁"更坏 —— 验证要重新走一遍上面的出口流程。⇒ 下次谁再有出口，**把轮换和验证打包做**：先建新值→立刻发一枪→确认 200→再登记新值的取法。⛔ 不要只换不验。
+2. **仓库与线上之间没有任何自动链路。** 9 次部署的 source 只有 `dash_template` / `quick_editor` / `dash`，`wrangler` 一次都没跑过。⇒ 今天"线上==main"是**手抄对上了**（有 SHA 证明），但机制上不保证。治漂移要接 `wrangler deploy` 或 Workers Builds 跟 Git 绑，⛔ 不是给 `/health` 加 commit 字段（那只能让漂移可见）。
+
+次要遗留：远端分支 `feat/selftest-probe` 还在（github 连接器⛔ 没有删分支工具）；`Labels` 仍是 multi_select 且 options 为空 —— 当前 7 条 issue 的 labels 全空所以不触发，一旦有人上标签就会撞 Notion 那段 400（错误原文与 request_id 已记在 AMY-7）。
 
 ## 钥匙能力矩阵（省你三小时，⛔ 别当现行值）
 
 | 通道 | ✅ 能 | ⛔ 不能（错误码） |
 |---|---|---|
-| github 连接器 | 读、写文件、建分支、合并 PR、删文件（均实测成功） | ⛔ “token 只读、写会 403” 已被当场证伪；⚠️ 但没有删分支工具 |
+| github 连接器 | 读、写文件、建分支、合并 PR、删文件（均实测成功） | ⛔ "token 只读、写会 403" 已被当场证伪；⚠️ 没有删分支工具 |
 | cloudflare MCP | 读配置、读 secret **名字**、拉线上源码、改配置（dashboard 换代码不清 bindings） | 写 secret（**10405**）；创建/替换 Worker（**10007**）；读遥测（**403**）；fetch 自家 workers.dev（**403**） |
-| linear 连接器 | 读写 issue/project；`patch` 可局部改正文（**锦点不匹配则整块不写**，安全） | 改附件标题（无接口）；`links` 回执成功但 **0/1 生效** ⇒ 写后必回读；⚠️ 正文里写 `AMY-6` 会被自动建关联并**推高对端 `updatedAt`** ⇒ 做滞后量要用 `completedAt`，⛔ 用 `updatedAt` |
-| notion 连接器 | 读库 schema（能看到 select 选项列表）、读写页面 | 本会话曾出现 `notion-get-teams` / `notion-search` 单次 `-32603` 假失败，重试即过 |
+| linear 连接器 | 读写 issue/project；`patch` 可局部改正文（**锚点不匹配则整块不写**，安全） | 改附件标题（无接口）；`links` 回执成功但 **0/1 生效** ⇒ 写后必回读；⚠️ 正文里写 `AMY-N` 会**推高对端 `updatedAt`** ⇒ 滞后量用 `completedAt` |
+| notion 连接器 | 读库 schema（含 select 选项列表）、读写页面、SQL 查询 | SQL 不带 `LIMIT` 会**静默少回行**；单次 `-32603` 假失败重试即过；⛔ 不会自动新建 select 选项 |
+| **postman 连接器 + REST** | **✅ 云端发 HTTP 请求 = 本链路目前唯一不需要手机的出口**；collections/environments/monitors 全套 REST 可用 | `/run/collection` 已 404；monitor 结果无响应体；⛔ 默认 UA 被 Cloudflare 1010 拦 |
 | qca 云沙箱 | 跑 shell、有外网 | 到 workers.dev（`allowed_hosts: []` 不可改 ⇒ DNS 黑洞 `108.160.166.9`） |
-| 用户本机 | 校园网常规出口；github/notion/linear/cloudflare API 全通 | 到 workers.dev（**SNI 重置**）；⛔ 开不了 VPN（Clash Verge 只剩 2025-10 的残留配置，无订阅） |
-| **用户手机 + VPN** | ✅ 目前**唯一**能打到这个端点的设备；GET 一个链接就能验收闸门 3/5 | 浏览器发不出 `Authorization` 头 ⇒ 只能测“不带密码”那一半；闸门 6 需 Termux 或等价 shell |
+| 用户本机 | 校园网常规出口；github/notion/linear/cloudflare/**postman** API 全通 | 到 workers.dev（**SNI 重置**）；⛔ 开不了 VPN |
+| **用户手机 + VPN** | 能打到这个端点；GET 一个链接就能验收闸门 3/5 | 浏览器发不出 `Authorization` 头 ⇒ 只能测"不带密码"那一半 |
 
-计费提醒：⚠️ **“模型限免”≠“这次调用免费”**。qca 一次探针实测 1.01 积分 = model 0.29 + **sandbox_runtime 0.71**；而 `list_models` 里该模型根本没有 `price_factor` 字段 ⇒ ⛔ 只看 price_factor 会漏掉沙箱运行时这一半。
+计费提醒：⚠️ **"模型限免"≠"这次调用免费"**。qca 一次探针实测 1.01 积分 = model 0.29 + **sandbox_runtime 0.71**；而 `list_models` 里该模型根本没有 `price_factor` 字段 ⇒ ⛔ 只看 price_factor 会漏掉沙箱运行时这一半。
 
 ## ⚠️ 工具陷阱：`create_or_update_file` 是**整份替换**
 
-实测：只传一行去“改一行”，整个 HANDOFF.md 从 6,036 B **被覆成 160 B**，回执仍为成功。
+实测：只传一行去"改一行"，整个 HANDOFF.md 从 6,036 B **被覆成 160 B**，回执仍为成功。
 ⇒ 改这个文件必须**整份重发**。要局部改，⛔ 用这个工具，改用 git 本地提交或先 `get_file_contents` 拉全文再改。
-⇒ 判据：回执里的 `size` 与 `content.sha`。本次靠 `size: 160` 当场发现并复原。
-⇒ 手抄全文的安全做法：先在本地算出目标 blob SHA-1，推完拿 GitHub 回的 `content.sha` 对撞（本轮两次都是这么做到零漂移的）。
-
-## 真存在的风险（当前未处置）
-
-**仓库与线上之间没有任何自动链路。** 9 次部署的 source 只有 `dash_template` / `quick_editor` / `dash`，`wrangler` 一次都没跑过。⇒ 今天“线上==main”是**手抄对上了**（而且有 SHA 证明），但机制上不保证。要治漂移，下一步是接上 `wrangler deploy` 或 Workers Builds 跟 Git 绑（dashboard 已提示“Connect your Git repository”），⛔ 不是给 `/health` 加 commit 字段（那只能让漂移可见）。
+⇒ 判据：回执里的 `size` 与 `content.sha`。
+⇒ 手抄全文的安全做法：先在本地算出目标 blob SHA-1，推完拿 GitHub 回的 `content.sha` 对撞（本轮多次零漂移都是这么做的）。
+⇒ ⛔ 文档里不要钉自己的 HEAD commit 号（下一次提交就作废）；⚠️ 写时刻时拿 UTC 原文换北京时间。
 
 ## 变更约定
 
-- 登记按“原文不改、文末追加”——但⛔ 只读前 20 行一定读到过期快照，所以**更正必须同时放顶部横幅**。
-- 每条结论都要写“**怎么测的 + 测于哪一刻**”，⛔ 不要只写“现行值”。
-- 写操作回执成功不算落盘，**必回读**；回读接口本身也要跑阳性对照。
+- 登记按"原文不改、文末追加"——但⛔ 只读前 20 行一定读到过期快照，所以**更正必须同时放顶部横幅**。
+- 每条结论都要写"**怎么测的 + 测于哪一刻**"，⛔ 不要只写"现行值"。
+- 写操作回执成功不算落盘，**必回读**；回读接口本身也要跑阳性对照（本轮：正则扫本地文件 0 命中 ⇒ 同一正则打在会话日志上必须命中，否则那个 0 不算数）。
 - ⛔ 本地记忆（各客户端自己的 memory 目录）**不是交接面**——它是每家一份的。要别人不重踩，必须写进本文件或 Linear。
-- ⛔ 文档里不要钉自己的 HEAD commit 号（包括本文件）——它在你写下它的那一秒就已开始过期。
-- ⚠️ 写时刻时**别照抄上一张图的小时数**（本文件就这么错过一次 12 小时）。拿不到原始时间就说“未记”，也别推。
+- 凭据：⛔ 不把 secret 值写进本文件、聊天记录或任何 agent 的 prompt；需要用时**从落盘点直接取**，只打印长度与前缀。
