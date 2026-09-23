@@ -25,7 +25,7 @@
 | 闸门 | 内容 | 状态 | 凭据（含测于哪一刻） |
 |---|---|---|---|
 | 1 | 仓库定位与分支 | ✅ | 实现在 `main`；⛔ 判"有没有入库"必 `list_branches` |
-| 2 | 线上代码 == 仓库 | ✅ | 双方 blob SHA-1 均为 `3a698aff59f5…`（10,860 B / 365 行；09-23 12:1x 现算） |
+| 2 | 线上代码 == 仓库 | ✅ 但**判据已换** | 服务版本 `2fc04c35…`（deployment `b5e84f14` @ 09-23 02:35:59Z，source `quick_editor`）的产物 etag `5d4e6aad…`；仓库 `main:src/index.js` blob `3a698aff59f5…`（10,860 B / 365 行）。⚠️ **09-23 14:5x 起⛔ 不能再拉裸 `/workers/scripts/{name}` 算 SHA** —— 见下条与「怎么判线上==仓库」 |
 | 3 | 配置在场 | ✅ | `GET .../secrets` 四个名字；`/selftest` 返 `syncAuthEnabled: true` |
 | 4 | 不带密码被拒 | ✅ | 09-22 23:36 手机 `POST /sync` → `{"error":"unauthorized"}` |
 | 5 | Worker 能拉到 Linear 并建好映射 | ✅ | 09-23 **10:44** 手机 `GET /selftest` → `{ok:true, fetched:7, previewCount:5, errors:[], syncAuthEnabled:true, durationMs:545}` |
@@ -75,7 +75,7 @@ Postman 路线（本轮实际用的，全程 REST，⛔ 不需要桌面客户端
 ## 三条"别再重踩"的实测结论
 
 1. **判"代码有没有入库"必须 `list_branches`。** 09-20 起实现全在 `demo/sync-skeleton`，而 `main` 只有一个 16 行 README 骨架——这个假象骗了两个会话两天。
-2. **"线上代码 == 仓库"要算哈希，⛔ 别看版本号。** 拉 `GET /accounts/{acct}/workers/scripts/linear-sync` 的 multipart 正文，按 `blob <len>\0` 算 SHA-1。`VERSION="0.2.0"` 从 `ac9b352` 起就没 bump，证不了构建。
+2. **"线上代码 == 仓库"要算哈希，⛔ 别看版本号；而且⛔ 不要拉裸 `/workers/scripts/{name}`。** 那个端点返回的是**最后一次上传的产物**，不是**正在服务的那一份**——今晚之前两者恰好重合（历次 dashboard 上传都同时就是部署），所以老配方当时成立；09-23 我用 `wrangler versions upload` 传了个不切流量的版本之后，它开始返回 esbuild 打包件，而线上仍是看板那份纯源码 ⇒ 照老配方跑会得出"线上≠仓库"的**反向错结论**。✅ 正确两步：`GET .../deployments` 取 `result.deployments[0].versions[0].version_id` → `GET .../versions/{那个id}` 读 `resources.script.etag` 与 `resources.bindings`。`VERSION="0.2.0"` 从 `ac9b352` 起就没 bump，⛔ 证不了构建。
 3. **"GitHub↔Linear↔Notion 三向循环"这个担心已被实测否定。** Worker 全文 `mutation` 命中 0 次；Two-way 开启后两侧新增镜像对象 0 条。⛔ 别再为此写"护栏"代码——真该补的是**部署自动化**（见下）。
 
 ## 量具级教训（本轮新增，都是"看着像结论其实是自己的工具坏了"）
@@ -84,7 +84,31 @@ Postman 路线（本轮实际用的，全程 REST，⛔ 不需要桌面客户端
 - **不带 `LIMIT` 的 Notion SQL 只回了 2 行**（同一条查询加 `ORDER BY id LIMIT 20` 回 7 行，`COUNT(*)` 也是 7）。⇒ 行列表**必须配一条 `COUNT(*)` 交叉**，否则会把"读到 2 行"当成"库里只有 2 行"。这类假象比空结果危险，因为它回的是**看起来合理的行**。
 - **`disabled` 的按钮可能只是 spinner**：Delete API Key 那个按钮 `disabled=""` 且 `innerText` 为空（标签在 `aria-label` 上），我据此判"点不动"。实际提交已经发出去了 —— reload 后表为空、同一个 `GET /me` 从 **200 变 401** 才是真凭据。⇒ 状态判定要看**服务端回读**，⛔ 看按钮。
 - **`fill` 进 React 受控输入只改 DOM `value`，不改组件 state** ⇒ 表单看到空值、静默不提交。本轮靠"读按钮的 disabled/spinner"定位到这个，最终用 `evaluate` 走原生 setter 或直接换 UI 路径。
+- **"派子 agent 独立复算"这件事，在 Qoder 上要打个折**：子会话拿不到本会话的 MCP 连接器（实测其 `mcp.json = {}`），所以它只能验 GitHub 一侧（`gh api` 可用），Linear/Notion/Cloudflare 侧一律"无法判"。⇒ 想真独立复算，得**另开一个客户端会话**（有钥匙的那家），⛔ 别用子 agent 冒充第二双眼睛。本轮它仍然有价值：仓库侧 blob `3a698aff59f5…` 与"三分支实况""`mutation` 0 次"都是它自己算的，且它明确写了哪些没验到、没有抄数。
 - **回执 `success:true` 不等于动作发生**（kimi 的 `key_type` 报了 `length:22`，实际页面根本没有那个输入框 —— 它回的是**我传进去的字符串长度**）。
+
+## 只读漂移检测（09-23 新增，已实测 + 故障注入验过）
+
+仓库里多了两样东西：`tools/drift_check.py`（⛔ 全程只读，只 GET）与 `drift/known_good.json`（基线登记：服务版本 id、产物 etag、四个 `secret_text` 绑定、仓库 blob SHA、记于哪一刻）。
+
+```bash
+export CLOUDFLARE_API_TOKEN=...      # ⛔ 别写进任何文件；见「部署凭据」那节
+python3 tools/drift_check.py         # 退出码 0=无漂移 1=有漂移/要看 2=检测器自己跑不动
+```
+
+它查四件事：① 服务版本的 **etag** 是否等于登记值；② **绑定集合**是否等于登记的四把 secret（少一把 = 锁没了或凭据没了）；③ 是否存在**内容不同但未部署**的版本（有 ⇒ 字节判据此刻不可用，直说，不误报"线上≠仓库"）；④ 部署是不是**分流**（多版本时提醒人工看，脚本不猜）。
+
+**它是有牙的，不是摆设**——两组注入都当场报错：登记 etag 尾字符改一个 ⇒ "etag 与登记值不同"；把 `SYNC_TOKEN` 从期望绑定里抽掉 ⇒ "绑定集合与登记值不同：多=[secret_text:SYNC_TOKEN]"。⚠️ 反向的坑也在代码注释里写着：⛔ 别拿 `result.scripts`、⛔ 别看裸 scripts 端点。
+
+**今晚的真实判定**：`⚠️ 有一个未部署的版本 #10（a7ba0f39，wrangler 传的打包件）与服务版本内容不同` ⇒ 这是我自己传的实验品，留着不切流量；要么下次部署覆盖它，要么认它为新基线并重登记。
+
+## 部署凭据（09-23 新铸，以及"只检测不切流量"这个决定）
+
+- Cloudflare **Account API Token** `deploy-linear-sync-30d`：权限⛔ 只有一条 `Individual Workers Editor`，且只作用于 `linear-sync`；**2026-10-24 自动过期**。值的存放：本机 `%LOCALAPPDATA%\cf_deploy_token.txt`（0600）。⛔ 不进仓库、不进聊天、不进任何 agent 的 prompt。
+- **实测过的边界**：读 `linear-sync` settings 200 ✅｜新建别的 Worker 403 ✅｜删 `linear-sync` 403 ✅｜读 Pages 403 ✅｜⚠️ **列出账号下所有 scripts 是 200**（per-worker 作用域⛔ 没挡住列举，只挡住内容）—— 别把这把钥匙当成"账号级隔离"。
+- `wrangler 4.136.3 whoami` 用它登录成功；`versions upload` 实测**四个 `secret_text` 全部保留**（官方也写 *secrets are never deleted by deployments*；会被删的是 `vars`，本 Worker 的 env 本来就是空）⇒ "自动部署会洗掉凭据"这个担心已被实测否定。
+- **用户 09-23 拍：只做检测，不切流量。** 理由（写在 `versions upload` 的输出里）：真切过去之后线上就是**构建产物**，"字节与仓库相同"这个判据永久作废，得换成"从 commit X 构建"的来源证法（版本可带 tag/annotation，方向是这个，⛔ 尚未落地）。要重启这个话题，就是"我要 CI 自动部署了"那一刻。
+
 
 ## 现在到底是什么状态
 
@@ -96,7 +120,7 @@ Postman 路线（本轮实际用的，全程 REST，⛔ 不需要桌面客户端
 ## 还欠着的两件事
 
 1. **`SYNC_TOKEN` 暂不轮换（09-23 用户拍板，⛔ 这是决定不是待办）。** 现值出现在本机会话日志里（同一值 16 处），也短暂进过 Postman 环境（该环境已删）。不换的理由：换完就没法验证，而"一把没人验过的锁"比"一把已知泄露面的锁"更坏 —— 验证要重新走一遍上面的出口流程。⇒ **谁都不许擅自换这把锁**；要换只能由用户重新授权，且必须与验证打包：先建新值→立刻发一枪→确认 200→再登记新值的取法。⛔ 不要只换不验。
-2. **仓库与线上之间没有任何自动链路。** 9 次部署的 source 只有 `dash_template` / `quick_editor` / `dash`，`wrangler` 一次都没跑过。⇒ 今天"线上==main"是**手抄对上了**（有 SHA 证明），但机制上不保证。治漂移要接 `wrangler deploy` 或 Workers Builds 跟 Git 绑，⛔ 不是给 `/health` 加 commit 字段（那只能让漂移可见）。
+2. **仓库与线上之间仍然没有自动链路（这是**决定**，不是缺能力）。** 部署记录 9 条，source 只有 `dash_template` / `quick_editor` / `dash`；`wrangler` 已可用（token 与 `versions upload` 都验过，见上两节），但用户 09-23 拍**只做只读检测、不切流量**。⇒ 现在治漂移的手段是 `tools/drift_check.py`（能发现"线上被动过"和"凭据少了一把"），⛔ 不是"push 即上线"。要换成自动部署，前提是先把"线上==仓库"的判据从字节比对换成来源证明（版本 tag 记 commit），否则漂移只是换了个看不见的方向。
 
 次要遗留：远端分支 `feat/selftest-probe` 还在（github 连接器⛔ 没有删分支工具）；`Labels` 仍是 multi_select 且 options 为空 —— 当前 7 条 issue 的 labels 全空所以不触发，一旦有人上标签就会撞 Notion 那段 400（错误原文与 request_id 已记在 AMY-7）。
 
