@@ -116,6 +116,18 @@ python3 tools/drift_check.py         # 退出码 0=无漂移 1=有漂移/要看 
 - **用户 09-23 拍：只做检测，不切流量。** 理由（写在 `versions upload` 的输出里）：真切过去之后线上就是**构建产物**，"字节与仓库相同"这个判据永久作废，得换成"从 commit X 构建"的来源证法（版本可带 tag/annotation，方向是这个，⛔ 尚未落地）。要重启这个话题，就是"我要 CI 自动部署了"那一刻。
 
 
+## 两处对本文的更正 + 一条独立性口径（09-23 晚，WorkBuddy 国际版提出，已自验）
+
+**更正一（我的错）**：本文与一次口头汇报里说过"worker UUID 拿不到、按版本取字节是 API 边界"。**前半句错**：那是把"我这把钥匙不行"说成了"这条路不行"。实测 —— 窄钥匙 `GET /accounts/{a}/workers/workers` = **403 / code 10000**；全局钥匙同一路径 = **200**，`id = 927d6c0d93bc407e99fdec24e5b350f5`。⚠️ 而且**不必走 beta**：旧端点 `GET /accounts/{a}/workers/scripts` 的返回里就带 `"tag": "927d6c0d93bc…"`；同一条记录还有 `deployed_on`（服务版本部署时刻）与 `modified_on`（最后一次上传时刻）—— 两者之差就是"线上多久没动"的现成读数。
+　根因写在这里防重犯：当时的脚本用 `.get("result") or []`，把 **403 / 空列表 / 字段形状不符** 渲染成同一张脸 ⇒ ⛔ 探针不许吞状态码。
+　**后半句仍成立**：新 API `GET /workers/workers/{uuid}/versions/{vid}` 只回元数据（`sources:null`、`modules:null`）⇒ "按版本取字节"确实无只读取法。**封死的是内容，不是身份。**
+
+**更正二（措辞）**：`etag` 不是"未变"的保证，而是**一串采样点**。登记写法应是"截至 <时刻> 经 <N> 次独立采样未见变化"。当前三次：06:5xZ、08:2xZ（均窄钥匙）、08:3xZ（WorkBuddy），值都是 `5d4e6aad…`；⛔ 采样点之间是盲区。
+
+**红线（文档逐字，别再试）**：`wrangler deploy` / Workers Builds / **Workers Script Upload API（`PUT /workers/scripts/{name}`）三者都会立即把新版本部署到 100% 流量** ⇒ ⛔ 谁都不许拿那条 PUT 做"不切流量的实验"。安全的只有 `wrangler versions upload`（文档原话 *not deployed immediately*；#10 的 `source: wrangler` + `annotations.workers/triggered_by = version_upload` 即为证）。
+
+**独立性口径（别把账记浮）**：今晚参与方只有 **两家产品** —— Qoder CN（执行方：仓库、HANDOFF、Notion 库结构均出自它）与 WorkBuddy 国际版（复算方）。Qoder 派出的子会话**同产品、且拿不到 MCP 连接器**，⛔ 不计为第二双眼睛。⇒ "两家互相印证"独立的是**读数**，⛔ 不独立的是**前提**（同一份由一家写的交接面 + 同一个 Notion 库）。下结论用这句话，⛔ 不要写"三家交叉验证"。附带一例：判别"Notion 会不会自动建 select 选项"的那发实验里，假选项名叫 `Qoder-自动建选项验证-勿留-20260923` —— 它是**被反驳方的同源证据**，⛔ 不是自我印证，但确实出自同一只手。
+
 ## 现在到底是什么状态
 
 - Worker 已上线：`https://linear-sync.amy4399666.workers.dev/`，`GET /health` 返 `ok:true`、`missingConfig: []`。
