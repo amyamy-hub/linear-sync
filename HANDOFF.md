@@ -164,6 +164,7 @@ python3 tools/drift_check.py         # 退出码 0=无漂移 1=有漂移/要看 
 ⇒ 判据：回执里的 `size` 与 `content.sha`。
 ⇒ 手抄全文的安全做法：先在本地算出目标 blob SHA-1，推完拿 GitHub 回的 `content.sha` 对撞（本轮多次零漂移都是这么做的）。
 ⇒ ⛔ 文档里不要钉自己的 HEAD commit 号（下一次提交就作废）；⚠️ 写时刻时拿 UTC 原文换北京时间。
+⇒ ⚠️ **Windows 命令行上限 32,767 字符**：用 `gh api -X PUT ... -f content="$(base64 -w0 f)"` 推 **>21 KB** 的文件会**静默失败**（`Argument list too long` 被吞进变量 ⇒ 看起来"没报错=成功"）。本轮连失两次才发现。✅ 正解：把 payload 写成 JSON 文件再 `gh api --input payload.json`；并且⛔ 不要把 `2>&1` 塞进变量后就不看内容 —— 每次写操作后**独立回读远端 sha** 才算成。
 
 ## 变更约定
 
