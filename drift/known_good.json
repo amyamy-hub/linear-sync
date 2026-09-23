@@ -1,9 +1,9 @@
 {
   "worker": "linear-sync",
   "account_id": "8cc84c00c1f796bda3efb9004d005e34",
-  "serving_version_id": "2fc04c35-cb89-4b82-a1e7-4c070d8347b8",
-  "serving_version_number": 9,
-  "artifact_etag": "5d4e6aada4d5f2b671a286b88d632c5666d71fe784e7530a66e5ba78a2cb0a4c",
+  "serving_version_id": "5e011838-ab37-4da9-8214-4ce91eb5f54d",
+  "serving_version_number": 13,
+  "artifact_etag": "b5cc1a50dc085ecd8cdaa7c19e480ca99ac27b063c6bc193dc1a37f59aafd05c",
   "repo_blob_sha1": "3a698aff59f50f413d217edccc602d1b63258a14",
   "expected_bindings": [
     "secret_text:LINEAR_API_KEY",
@@ -11,8 +11,37 @@
     "secret_text:NOTION_TOKEN",
     "secret_text:SYNC_TOKEN"
   ],
-  "recorded_at_utc": "2026-09-23T07:44:53Z",
-  "recorded_by": "Qoder（会话 be967164）",
+  "recorded_at_utc": "2026-09-23T17:44:00Z",
+  "recorded_by": "Qoder CN（会话 dd7e22e5）· 部署与读数由用户亲手完成",
   "artifact_kind": "dashboard_quick_editor_pasted_plain_source",
-  "note": "artifact_etag 对应「从看板粘贴纯源码」这一种产物。若将来改用 wrangler/CI 部署，产物会变成 esbuild 打包件、etag 必然不同 ⇒ 要另记一条并把 repo_blob_sha1 换成构建来源证法，不要覆盖本条。"
+  "receipt": {
+    "why_this_is_a_receipt_not_a_silencing": "⚠️ 这是一次「带收据的基线更新」，⛔ 不是为了让检测器变绿而改登记值。上一版基线停在 #9（etag 5d4e6aad…），#13 是我们自己刚做的合法部署 ⇒ 检测器会把**自己的部署**报成漂移。",
+    "deployment_id": "67e626d1-25a2-47d0-9785-f38d61775360",
+    "deployment_created_on": "2026-09-23T16:53:57.758464Z",
+    "deployment_source": "quick_editor",
+    "version_annotations": {"workers/triggered_by": "upload"},
+    "how_the_bytes_were_taken": "Deploy 之后**立刻** GET 裸 `/accounts/{a}/workers/scripts/linear-sync`（multipart），取 name=\"index.js\" 那一段（10,860 B），按 `blob <len>\\0` + 内容算 SHA-1 ⇒ 3a698aff59f50f413d217edccc602d1b63258a14，与 `main:src/index.js` 逐字节相同。",
+    "three_way_agreement": "dashboard 顶栏同刻显示 `5e011838 (Active) Latest` ＋ CF API `deployments[0].versions[0].version_id = 5e011838…` ＋ 字节哈希等于仓库 blob ⇒ UI／API／哈希三处一致。",
+    "reconfirmed_at_utc": "2026-09-23T17:44:00Z",
+    "reconfirmed_readings": "serving 仍是 #13；etag 仍 b5cc1a50…；裸端点 part 仍 10,860 B / blob 3a698aff…（含 `export default`）；绑定 4×secret_text；deployments=12、versions=13。",
+    "validity_window": "⚠️ 「线上 == 仓库」这个等价**只在「最后一次上传 == 服务版本」那一窗成立**。此后任何人做一次 dashboard 保存或 `versions upload`，裸端点读到的就是他那一份 ⇒ 本字段的字节证明**当场作废**，只有 version_id＋etag 仍然可复算。"
+  },
+  "history": [
+    {
+      "serving_version_id": "2fc04c35-cb89-4b82-a1e7-4c070d8347b8",
+      "serving_version_number": 9,
+      "artifact_etag": "5d4e6aada4d5f2b671a286b88d632c5666d71fe784e7530a66e5ba78a2cb0a4c",
+      "recorded_at_utc": "2026-09-23T07:44:53Z",
+      "superseded_because": "#13 于 2026-09-23T16:53:57Z 从 main 重新部署并留了三元组收据。"
+    }
+  ],
+  "known_undeployed_versions": [
+    {
+      "version_id_prefix": "a7ba0f39",
+      "kind": "wrangler versions upload 的 esbuild 打包件（9,910 B / blob 3e14bb90… / 不含 export default）",
+      "kept_intentionally": true,
+      "note": "用户 09-23 拍：让告警亮着，⛔ 不要为消音改登记值。⚠️ 09-24 新发现的代价：它虽从未进 deployments，却**占住了脚本槽位**，被之后每次 dashboard 保存继承 ⇒ 15:27Z–16:53Z 线上跑的其实是它。"
+    }
+  ],
+  "note": "artifact_etag 对应「从看板粘贴纯源码」这一种产物。若将来改用 wrangler/CI 部署，产物会变成 esbuild 打包件、etag 必然不同 ⇒ 要另记一条并把 repo_blob_sha1 换成构建来源证法，不要覆盖本条。⚠️ etag 是**产物指纹**，⛔ 不是文件哈希（sha256(main:src/index.js) 是另一个值），两者永不可对撞。"
 }
