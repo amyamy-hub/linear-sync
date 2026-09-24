@@ -305,6 +305,34 @@ msg: Could not find database with ID: …  Make sure the relevant pages and data
 
 **下一步（顺序固定）**：① 把库共享给 `status-gap-read`（页面上一下）→ ② `GET /v1/databases/{db}` 取到 `Status` 全部选项与 option id → ③ 写 `tools/status_gap_check.py`（Notion 白名单 vs `drift/linear_statuses.json` 并集，报差集；带**故障注入**：塞一个假档名必须亮、只喂单来源必须报"来源不全"）→ ④ 补 Notion 的 `In Progress / In Review / Canceled / Duplicate` 四个选项——⚠️ 这一步⛔ 用这把只读钥匙做不了（它按设计就不能写），仍要等 Notion 连接器回来或由你在界面加。
 
+## ✅ 09-24 傍晚：`Status` 三档已补齐（写操作 + 两件独立回读通过）
+
+**动了什么**：给 Notion 库 `Linear Issues 同步库` 的 `Status` 加上 **`In Review`:yellow / `Canceled`:gray / `Duplicate`:brown**，原有三档保持。走的是**回来的 Notion 连接器**（⛔ 不是那把只读钥匙——它按设计没有写权限，而且还没共享给库）。
+```
+ALTER COLUMN "Status" SET SELECT('Backlog':blue,'Todo':green,'Done':gray,
+                                 'In Review':yellow,'Canceled':gray,'Duplicate':brown)
+```
+
+**两件回读（都独立于写操作那次的响应，⛔ 不看写回执）**：
+
+| 验什么 | 基线（ALTER 前现读） | ALTER 后独立回读 | 判 |
+|---|---|---|---|
+| 旧 option 未被重建 | `Backlog=…ZGFhMzk0NzEt…`、`Todo=…NzE3ZDI1ZDEt…`、`Done=…Njc5YzQ2ZWUt…` | 三个 id **逐字符相同** | ✅ |
+| 行未被清空 | `AMY-1..4=Todo`、`AMY-5=Backlog`、`AMY-6/7=Done`（7 行） | 聚合回读 `Todo 4 / Backlog 1 / Done 2` = **7** | ✅ |
+
+⇒ 差集从 3 档缩到 **0**（在已确证的档范围内）。`Labels` 那颗雷⛔ 原样留着（options 仍为 `[]`，名字猜不到，不预造）。
+
+**`In Progress` 的处置：不加，并写清为什么**：
+- 我在浏览器里点到的 `/settings/project-statuses` 显示 `Backlog / Planned / In Progress / Completed / Canceled` —— ⚠️ 那是**项目**工作流，⛔ 不是工单工作流；Worker 只同步 issue ⇒ 与本报告无关。
+- API 侧 `list_issue_statuses(Amy-agent)` 回 5 条（`In Review`/`Canceled`/`Done`/`Duplicate`/`Todo`），⛔ 不含 `Backlog`，而 `Backlog` 正被 AMY-5 使用 ⇒ **这个接口不是全集**（已在 `drift/status_gap_recipe.md` 记为硬规则）。
+- ⇒ 我的**推断**（⛔ 不是确证）：AMY 工单的 `started` 档被命名成 `In Review`，所以没有 `In Progress`。加上"命名可改、随时可加档"这件事本身不可穷举 ⇒ **正确处置不是把选项表补到完备，而是让探针常驻**：`Linear 可用档 − Notion 白名单 ≠ ∅` 就亮灯。
+
+**两条过程中的量具教训（都值一次复犯）**：
+1. ⚠️ **"点了没反应"有两次是假的，都是我读得太早**。Linear/Notion 这类 SPA 导航后 DOM 要 6–12 秒才换；我按 3–5 秒读，读到的是旧页面，于是判成"点击无效/路由不存在"，还差点据此去写"这个页面在桥下不可读"。⇒ 判据：**先 `list_tabs` 看 URL**（它比 DOM 快照便宜且权威），URL 变了就是导航成功，内容再等。本轮 `project-statuses` 那页就是这么发现的——我先前断言"侧栏 Statuses 点了没动"⛔ 错了。
+2. ⚠️ **`notion-query-data-sources` 会连吃 `-32603 did not complete`**（本轮 2 次），换**聚合口径**（`GROUP BY` 而不是逐行）就过了。⇒ 同一条查询失败时，先换形状再怀疑数据。
+
+**探针现状（别当已交付）**：`tools/status_gap_check.py` ⛔ 还没写，因为那把只读钥匙**尚未被共享给库**（`GET /v1/databases/…` 仍 404 `object_not_found`，报文点名要 share 给 `status-gap-read`），而 Notion 的"页面级访问权限"入口在**付费墙**后面（截图实证：`立即升级` / `无可用属性`）。⇒ 现阶段差集检查只能由**带 Notion 连接器的客户端按 `drift/status_gap_recipe.md` 执行**；要它变成离线脚本，得先解决共享这一步。
+
 ## 变更约定
 
 - 登记按"原文不改、文末追加"——但⛔ 只读前 20 行一定读到过期快照，所以**更正必须同时放顶部横幅**。
