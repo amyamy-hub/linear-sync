@@ -277,6 +277,34 @@ python3 tools/drift_check.py         # 退出码 0=无漂移 1=有漂移/要看 
 3. 🔴 **我自己推翻自己刚才那条"等 `In Progress` 确证再一次加齐"**：代价不对称 —— 多加一档而 Linear 从不用，代价≈0（下拉里多一个灰选项）；少一档而有人拖上去，代价是**静默 400、页面数不变、无人告警**。⇒ 正确做法不是花轮次去确证，而是**一次加四档：`In Progress` / `In Review` / `Canceled` / `Duplicate`**。
    ⇒ 复盘一句：我当时的理由"不靠大概率往生产表加档"在**证据层**没错，⛔ 但被我用到了一个**风险不对称**的选择上 —— 证据洁癖的正确用法是"别把未证的事写成已证"，而不是"在未证但代价不对称的选项上选贵的那边"。
 
+## 🔑 09-24 下午：Notion 只读钥匙已铸成并落盘（差最后一步"共享给库"）
+
+**做成了什么**（全程我用 kimi 桥驱动用户已登录的 Edge，⛔ 值没进过对话/日志）：
+
+| 项 | 结果 |
+|---|---|
+| 内部连接 | `status-gap-read`，id `3e530d6b-1b59-8144-a223-0027809470c2`（`/developers/connections/…`） |
+| 能力 | **读取内容 = true；更新内容 / 插入内容 / 读取评论 / 插入评论 = false**（点完再读 `aria-pressed` 复核，翻转保持）⇒ 是真只读 |
+| 令牌 | 50 字符 `ntn_1…38pE`，落在 `%LOCALAPPDATA%\notion_read_key.txt`；`icacls /inheritance:r /grant:r <用户>:F`；下载目录那份已删 |
+| 取值的通道 | 剪贴板走不通：`Get-Clipboard` 连抛 8 次、退到 `[Windows.Forms.Clipboard]` 再试 5 次 ⇒ `CLIPBOARD_UNREADABLE`（这台机的 shell 读不到剪贴板）。✅ 换成**页面内 `Blob` + `<a download>`**，文件落到 Edge 的下载目录（`D:\Download`），我再用 Python 搬进 `LOCALAPPDATA`。⇒ 值全程⛔ 不经对话、不经我的 stdout |
+
+**⛔ 未完成的一步**：库还没共享给这个连接。API 说得很直白：
+```
+GET /v1/databases/3e230d6b1b598196ad25c1b867bc9c3b   → 404 object_not_found
+msg: Could not find database with ID: …  Make sure the relevant pages and databases
+     are shared with your integration "status-gap-read".
+```
+⇒ 所以差集探针现在跑必然是 404，⛔ 别当"Notion 挂了"。剩下的是页面上 `共享` / `操作` → 添加连接 那一下，我这侧 CDP 点击对这两个顶栏按钮没生效（同一招在能力开关上是生效的 ⇒ 是这两个按钮的问题，不是通道坏了）。
+
+**四条量具级实测（都会救下一个人几小时）**：
+
+1. ⭐ **"点不动"的真因常常是坐标在视口外，不是事件被吞**。判据一行：`document.elementFromPoint(x,y) === null`。本轮两颗开关的 y 是 740/790、`innerHeight=717` ⇒ 点的是空白；`scrollIntoView({block:"center"})` 之后同一条 CDP 点击立刻生效。**我先前把病因判成 `visibilityState:"hidden"` + Notion 只认 `isTrusted`，⛔ 错了**——而且错的证据我手里早就有（那次 `element@pt` 就打印了 `None`），却先挑了个更漂亮的解释。
+2. ⚠️ **CDP 点击的坐标必须是视口内**；扩展的 `click/mouse_click` 吃 CSS 选择器或 `@e` ref，⛔ 不吃坐标；真坐标点击要 `cdp Input.dispatchMouseEvent`（mousePressed+mouseReleased，`clickCount:1`）。
+3. 🔣 **Notion 的 data source 端点要 `Notion-Version: 2025-09-03`**：`2022-06-28` 下 `/v1/data_sources/{id}` 直接 `invalid_request_url`，`2024-03-01` 报 `missing_version`。⇒ 404 `object_not_found` 反而说明端点与版本对了，是权限问题。
+4. 🌐 这台机到 Notion API：curl 默认 HTTP/2 有 **1/8 失败**，加 `--http1.1` 后 **8/8 拿到 401/正常应答**；`app.notion.com` 5/5 通。⇒ 上一轮那三次 `Connection was reset` 是**抖**，我据此差点写成"本机到不了 Notion API"——⛔ 那是没采样够就下结论（本文件第 N 次同族）。
+
+**下一步（顺序固定）**：① 把库共享给 `status-gap-read`（页面上一下）→ ② `GET /v1/databases/{db}` 取到 `Status` 全部选项与 option id → ③ 写 `tools/status_gap_check.py`（Notion 白名单 vs `drift/linear_statuses.json` 并集，报差集；带**故障注入**：塞一个假档名必须亮、只喂单来源必须报"来源不全"）→ ④ 补 Notion 的 `In Progress / In Review / Canceled / Duplicate` 四个选项——⚠️ 这一步⛔ 用这把只读钥匙做不了（它按设计就不能写），仍要等 Notion 连接器回来或由你在界面加。
+
 ## 变更约定
 
 - 登记按"原文不改、文末追加"——但⛔ 只读前 20 行一定读到过期快照，所以**更正必须同时放顶部横幅**。
@@ -343,9 +371,13 @@ GET /environments                     → aa1c742f-86ae-4a80-a492-1477c3139c91 "
 > ⇒ **删不删的判据换掉**：⛔ 别再拿时间戳推"它是不是旧钥匙"。要判这套临时件里是不是活钥匙，只有两条路——用户在界面上用眼睛看（本次就是这么定的），或**打一发带它的请求看 200 还是 401**（那属于闸门 5，需要出口）。
 > ⇒ 用户的裁定是**条件式**的："若存旧密钥副本就删" ⇒ 条件不成立 ⇒ **集合与环境都保留**（当前测试窗口还要用）。⚠️ 保留的代价写清楚：**任何能登进这个 Postman 账号的人，手里就有一把能写生产 Notion 的活钥匙** ⇒ **窗口一关就删**，这条不变。
 
-3. **新值另存**：48-hex 新值目前有**三处**副本（CF secret 读不出来 / Postman 环境 / 用户手上）⇒ 建议存一份进密码管理器，免得"误删环境"变成"只能再换一次锁"。
-   > ⚠️ 09-24 09:5x：本条上一版被我改成"只剩两处、存密码管理器是唯一容错手段"——**那是错的**，判据是我拿列表端点的 `updatedAt` 推"环境里还是旧值"。用户已在界面上确认 **环境里就是当前那把（`bd96` 开头、48 位）** ⇒ 副本数回到三处，本条从"抢救"降回"建议"。
-   > ⚠️ 但同一件事的反面要留着：**正因为环境里是活钥匙**，它在测试窗口关闭前就是"任何能登进该 Postman 账号的人手里有一把生产钥匙"。⇒ 上一级动作不是"另存"，而是**关窗口时就删**。
+3. ✅ **新值另存 —— 已完成（09-24 用户自报："之前你让我存了 `bd96` 了"）**。48-hex 新值现有**三处**副本：
+   CF secret（按设计读不出来）／ Postman 环境 `aa1c742f-86ae-4a80-a492-1477c3139c91`（09-24 用户在界面上
+   确认前缀 `bd96` ⇒ 是当前值）／ **用户的密码管理器**。
+   > ⚠️ **这一条⛔ 无法由 agent 复验**：密码管理器不在任何我能读的接口后面，采信依据只有用户一句自报。
+   > ⇒ 登记时**别把它写成"已验证"**，写成"用户自报完成"。要真验只能反过来做：下次需要取值时能不能取出来。
+   > ⚠️ 同一轮的教训仍留着：我曾据 Postman 列表接口的 `createdAt == updatedAt` 推断"环境里是旧值"，
+   > ⛔ 错 —— 列表接口回的是元数据，`type: secret` 的值改动不反映在 `updatedAt` 上。
 
 4. **`/selftest` 去留未决**：它是唯一不需要出口就能验收闸门 3/5 的手段，但**无鉴权**且会吃 Linear 配额、泄露 `fetched`。用户倾向保留；⛔ 别顺手给它加写路径。
 5. **`Labels` 那颗雷**：multi_select 且 options 为空 ⇒ 谁在 Linear 贴第一个标签就撞 400，而"页面数不变"这个老判据会把部分失败判成通过（原文与 request_id 在 AMY-7）。用户 09-23 定性：⛔ 不预先造选项。
