@@ -40,7 +40,7 @@ MAX_DETAIL_GETS = 10   # 未部署版本可能很多，逐个取详情会打爆�
 # 恒不触发——现读实测今天就是恒不响（登记的 min_version 与脚本 revision 逐字符相等）。
 # ⚠️ 串比较⛔ 等于日历序：非零填充（2026-9-26）跨月那侧会把"更新的要求"判成"不更新"⇒ 静默放行。
 # ⇒ 先校验格式，再要求两侧完全相等，任一方向不一致都拒跑。
-TOOL_REVISION = "2026-09-26-exemption-expiry-stamp-lock"
+TOOL_REVISION = "2026-09-26-versions-pagination-parity"
 REV_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -167,10 +167,15 @@ def main():
     vs = get("/accounts/%s/workers/scripts/%s/versions?per_page=%d" % (acct, name, PER_PAGE), token)
     items = (vs.get("result") or {}).get("items") or []
     if not items:
-        print("  ⚠️ 拿不到版本列表（不影响上面两项，但「未部署上传」这一项**没测到**）")
+        drift.append("拿不到 versions 列表 ⇒「未部署上传」这一项根本没测到，⛔ 允许它混进一次\"无漂移\"")
     else:
+        ri2 = vs.get("result_info") or {}
+        if ri2.get("total_count") is not None and ri2["total_count"] != len(items):
+            drift.append("versions 没拉全：本页 %d，信封 total_count=%s ⇒ 未部署扫描不完整，⛔ 报无漂移"
+                         "（09-26 补：这里原先只 print 一行警告就走，与 deployments 那侧不对称——由 codacy Bot 在 PR #5 挑出）"
+                         % (len(items), ri2["total_count"]))
         if len(items) >= PER_PAGE:
-            print("  ⚠️ versions 取满 %d 条 ⇒ 未部署扫描可能不全" % PER_PAGE)
+            drift.append("versions 取满 %d 条 ⇒ 必须翻页，未部署扫描可能漏掉更早的版本" % PER_PAGE)
         newest = items[0]
         nm = (newest.get("metadata") or {})
         newest_num = newest.get("number") or nm.get("number")
