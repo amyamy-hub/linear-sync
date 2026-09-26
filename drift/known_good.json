@@ -12,7 +12,7 @@
     "secret_text:SYNC_TOKEN"
   ],
   "recorded_at_utc": "2026-09-23T17:44:00Z",
-  "detector_min_version": "2026-09-24-scan-all-undeployed",
+  "detector_min_version": "2026-09-26-exemption-expiry-stamp-lock",
   "recorded_by": "Qoder CN（会话 dd7e22e5）· 部署与读数由用户亲手完成",
   "artifact_kind": "dashboard_quick_editor_pasted_plain_source",
   "receipt": {
@@ -20,7 +20,9 @@
     "deployment_id": "67e626d1-25a2-47d0-9785-f38d61775360",
     "deployment_created_on": "2026-09-23T16:53:57.758464Z",
     "deployment_source": "quick_editor",
-    "version_annotations": {"workers/triggered_by": "upload"},
+    "version_annotations": {
+      "workers/triggered_by": "upload"
+    },
     "how_the_bytes_were_taken": "Deploy 之后**立刻** GET 裸 `/accounts/{a}/workers/scripts/linear-sync`（multipart），取 name=\"index.js\" 那一段（10,860 B），按 `blob <len>\\0` + 内容算 SHA-1 ⇒ 3a698aff59f50f413d217edccc602d1b63258a14，与 `main:src/index.js` 逐字节相同。",
     "three_way_agreement": "dashboard 顶栏同刻显示 `5e011838 (Active) Latest` ＋ CF API `deployments[0].versions[0].version_id = 5e011838…` ＋ 字节哈希等于仓库 blob ⇒ UI／API／哈希三处一致。",
     "reconfirmed_at_utc": "2026-09-23T17:44:10Z",
@@ -48,7 +50,9 @@
       "version_id_prefix": "a7ba0f39",
       "kind": "wrangler versions upload 的 esbuild 打包件（9,910 B / blob 3e14bb90… / 不含 export default）",
       "kept_intentionally": true,
-      "note": "用户 09-23 拍：让告警亮着，⛔ 不要为消音改登记值。⚠️ 09-24 新发现的代价：它虽从未进 deployments，却**占住了脚本槽位**，被之后每次 dashboard 保存继承 ⇒ 15:27Z–16:53Z 线上跑的其实是它。"
+      "note": "用户 09-23 拍：让告警亮着，⛔ 不要为消音改登记值。⚠️ 09-24 新发现的代价：它虽从未进 deployments，却**占住了脚本槽位**，被之后每次 dashboard 保存继承 ⇒ 15:27Z–16:53Z 线上跑的其实是它。 ｜09-26 补 owner/review_by：豁免⛔ 再是永久无主；到期日检测器拒跑而非静默绿。",
+      "owner": "用户（窗口 A 代登记）",
+      "review_by": "2026-12-26"
     }
   ],
   "note": "artifact_etag 对应「从看板粘贴纯源码」这一种产物。若将来改用 wrangler/CI 部署，产物会变成 esbuild 打包件、etag 必然不同 ⇒ 要另记一条并把 repo_blob_sha1 换成构建来源证法，不要覆盖本条。⚠️ etag 是**产物指纹**，⛔ 不是文件哈希（sha256(main:src/index.js) 是另一个值），两者永不可对撞。"
