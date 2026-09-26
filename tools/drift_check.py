@@ -20,9 +20,11 @@
 import argparse
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
+from datetime import date
 
 # 本机是 GBK 控制台，中文/emoji 会直接把 print 炸掉（实测），所以强制 UTF-8 输出。
 try:
@@ -34,9 +36,13 @@ except Exception:
 API = "https://api.cloudflare.com/client/v4"
 PER_PAGE = 100
 MAX_DETAIL_GETS = 10   # 未部署版本可能很多，逐个取详情会打爆请求数
-# 能力戳：日期前缀 ⇒ 字符串比较即时间序。登记里写 detector_min_version 可以
-# 拒掉"拿旧副本跑出一盏假绿灯"（旧版只比最新版，09-24 实测会漏报 #10）。
-TOOL_REVISION = "2026-09-24-scan-all-undeployed"
+# 能力戳：09-26 起改成**同版才算数**。旧写法 `req > TOOL_REVISION` 在 req == TOOL_REVISION 时
+# 恒不触发——现读实测今天就是恒不响（登记的 min_version 与脚本 revision 逐字符相等）。
+# ⚠️ 串比较⛔ 等于日历序：非零填充（2026-9-26）跨月那侧会把"更新的要求"判成"不更新"⇒ 静默放行。
+# ⇒ 先校验格式，再要求两侧完全相等，任一方向不一致都拒跑。
+TOOL_REVISION = "2026-09-26-exemption-expiry-stamp-lock"
+REV_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-")
+DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 def fail(msg):
@@ -63,13 +69,26 @@ def get(path, token):
 
 
 def listed_prefixes(ledger):
-    """登记里被明示"有意保留"的未部署版本 id 前缀集合。"""
+    """豁免必须**可到期、有 owner**：缺失／格式非法／已过期 ⇒ 拒跑，⛔ 降级成告警。
+    09-26 起因：现读登记里那条 #10 的豁免只有 kept_intentionally 一个布尔，无 expires、无 owner，
+    而本函数当年是 `if e.get("kept_intentionally")` ⇒ 永久且无主的豁免＝把「灯灭」制度化。"""
     out = []
+    today = date.today().isoformat()
     for e in ledger.get("known_undeployed_versions") or []:
-        if e.get("kept_intentionally"):
-            p = (e.get("version_id_prefix") or "").strip()
-            if p:
-                out.append(p)
+        if not e.get("kept_intentionally"):
+            continue
+        vid = (e.get("version_id_prefix") or "").strip()
+        owner = (e.get("owner") or "").strip()
+        rb = (e.get("review_by") or "").strip()
+        if not vid:
+            fail("豁免条目缺 version_id_prefix ⇒ ⛔ 知道它挡的是哪一条，等于没挡")
+        if not owner:
+            fail("豁免 %s 无 owner ⇒ 永久且无主的豁免就是把「灯灭」常态化，拒跑" % vid)
+        if not DATE_RE.match(rb):
+            fail("豁免 %s 的 review_by=%r 不是 YYYY-MM-DD ⇒ 拒跑（⛔ 静默当成永不过期）" % (vid, rb))
+        if rb < today:
+            fail("豁免 %s 已于 %s 到期（owner=%s）⇒ 拒跑。要么重新复核后推 review_by，要么撤掉豁免让告警亮" % (vid, rb, owner))
+        out.append(vid)
     return out
 
 
@@ -88,17 +107,28 @@ def main():
     drift = []
 
     req = led.get("detector_min_version")
-    if req and str(req) > TOOL_REVISION:
-        fail("登记要求的检测器能力 %r 比本脚本 %r 新 ⇒ 拒跑。"
-             "（这不是摆设：09-24 实测旧版只比『最新版』，会漏掉更早的未部署版本并打印『没有未部署的上传』这种假话。）"
+    if req is None:
+        fail("登记里没有 detector_min_version ⇒ 无法确认这份登记是为哪一版检测器写的，拒跑")
+    if not REV_RE.match(str(req)):
+        fail("登记的 detector_min_version=%r 格式非法（要 YYYY-MM-DD-…）⇒ ⛔ 按字符串比会静默放行" % (req,))
+    if not REV_RE.match(TOOL_REVISION):
+        fail("本脚本 TOOL_REVISION=%r 自己就不合规 ⇒ 比较无意义" % (TOOL_REVISION,))
+    if str(req) != TOOL_REVISION:
+        fail("登记要求 %r，本脚本是 %r ⇒ 任一方向不一致都拒跑。"
+             "改检测器与改登记是**两文件原子动作**，漏一个就是自锁死或假绿灯。"
              % (req, TOOL_REVISION))
 
     dep = get("/accounts/%s/workers/scripts/%s/deployments?per_page=%d" % (acct, name, PER_PAGE), token)
     deps = (dep.get("result") or {}).get("deployments") or []
     if not deps:
         fail("没有任何 deployment，线上根本没部署过？")
+    ri = dep.get("result_info") or {}
+    if ri.get("total_count") is not None and ri["total_count"] != len(deps):
+        drift.append("deployments 没拉全：本页 %d，信封 total_count=%s ⇒ 未部署扫描可能不全" % (len(deps), ri["total_count"]))
     if len(deps) >= PER_PAGE:
-        print("  ⚠️ deployments 取满 %d 条 ⇒ 这个数只是**本页**，不是总数（该端点不返回 result_info）" % PER_PAGE)
+        print("  ⚠️ deployments 取满 %d 条 ⇒ 必须翻页。顶层 result_info.total_count=%s"
+              "（09-26 现读更正：该字段在**信封顶层**，⛔ 在 result 里——旧注释说它不存在是错的）"
+              % (PER_PAGE, ri.get("total_count")))
     d0 = deps[0]
     versions = d0.get("versions") or []
     if not versions:
