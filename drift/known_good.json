@@ -5,7 +5,7 @@
   "serving_version_number": 13,
   "artifact_etag": "b5cc1a50dc085ecd8cdaa7c19e480ca99ac27b063c6bc193dc1a37f59aafd05c",
   "repo_blob_sha1": "3a698aff59f50f413d217edccc602d1b63258a14",
-  "expected_bindings": [
+  "repo_blob_sha1_role": "说明性登记：本字段由人核对，检测器全文⛔ 引用它（第 37 条①现算 0 处命中）⇒ ⛔ 把它当判据",  "expected_bindings": [
     "secret_text:LINEAR_API_KEY",
     "secret_text:NOTION_DATABASE_ID",
     "secret_text:NOTION_TOKEN",
