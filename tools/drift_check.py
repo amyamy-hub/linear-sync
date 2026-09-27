@@ -40,7 +40,7 @@ MAX_DETAIL_GETS = 10   # 未部署版本可能很多，逐个取详情会打爆�
 # 恒不触发——现读实测今天就是恒不响（登记的 min_version 与脚本 revision 逐字符相等）。
 # ⚠️ 串比较⛔ 等于日历序：非零填充（2026-9-26）跨月那侧会把"更新的要求"判成"不更新"⇒ 静默放行。
 # ⇒ 先校验格式，再要求两侧完全相等，任一方向不一致都拒跑。
-TOOL_REVISION = "2026-09-26-versions-pagination-parity"
+TOOL_REVISION = "2026-09-27-slot-etag-gate"
 REV_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -154,6 +154,25 @@ def main():
     binds = sorted("%s:%s" % (b.get("type"), b.get("name")) for b in (res.get("bindings") or []))
     print("· 产物 etag      : %s…" % etag[:16])
     print("· 绑定           : %s" % (", ".join(binds) or "(无)"))
+    # 闸门 2b：/download 给的是【脚本槽位当前内容】，不是【服务版本】的内容。
+    # 只有槽位 etag == 服务版本 etag 时，那份字节才代表线上。09-24 的 #10 是反例：
+    # 上传未部署却占住槽位、被之后每次 dashboard 保存继承，线上跑了 1.5 小时打包件。
+    slot = get("/accounts/%s/workers/scripts" % (acct,), token)
+    slot_rows = slot.get("result") or []
+    if isinstance(slot_rows, dict):
+        slot_rows = slot_rows.get("scripts") or []
+    slot_row = next((s for s in slot_rows if s.get("id") == name), None)
+    if slot_row is None:
+        drift.append("scripts 列表里找不到该 Worker 槽位 => 槽位 etag 没测到（⛔ 当成「没有」）")
+    else:
+        slot_etag = slot_row.get("etag") or ""
+        print("· 槽位 etag      : %s…" % slot_etag[:16])
+        if not slot_etag:
+            drift.append("槽位记录里没有 etag 字段 => 字节判据此刻不可用；没测到 ≠ 没有")
+        elif slot_etag != etag:
+            drift.append("槽位 etag(%s…) ≠ 服务版本 etag(%s…) => /download 回的是最后一次上传，"
+                         "⛔ 用它下「线上==仓库」的判；本轮那条字节比对结论作废"
+                         % (slot_etag[:8], etag[:8]))
 
     if etag != led["artifact_etag"]:
         drift.append("etag 与登记值不同 ⇒ 线上产物不是登记过的那一份")
