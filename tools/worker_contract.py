@@ -17,8 +17,13 @@
      在 diff 里看得见，也让反证套件能**单独改契约**或**单独改源码**来试出两头的牙。
   2. **锚点＝内容⛔ 行号**（第 14 条②、第 47 条②(a)）。行号只在末尾当**读数**打印，供墙上那些
      「第 179 行」「第 149 行」现算复核，⛔ 参与判定。
-  3. **契约钉着它是对着哪一份源码定的**（`source.blob_sha1`）：源码一动就对不上 ⇒ exit 2，
+  3. **契约钉着它是对着哪一份源码定的**（`source.sha256_of_bytes` ＋ `bytes`）：源码一动就对不上 ⇒ exit 2，
      逼下一个人重新看一眼契约，而⛔ 拿旧契约去量新代码。
+     ⚠️ 这一钉用 **SHA-256**、⛔ 用 git 的 blob 号：blob 号是 SHA-1，而"再多一处 SHA-1 调用"在门禁上
+     ＝新增一批 issue——现有那枚豁免只盖住 `tools/drift_check.py` 里已逐条 Ignore 的那一行（第 47 条：
+     豁免绑实例＋行号，新写的行⛔ 在豁免内）。本件要答的是"这份字节变过没"，⛔ 是"它在 git 里叫什么"
+     ⇒ 强哈希完全够。契约里仍**展示** `blob_sha1`（登记时从 `GET /git/trees` 现抄的，供与仓库对撞），
+     本件⛔ 重算它，也⛔ 联网。
 
 退出码：0＝每条都等；1＝有⛔ 等、或契约过期（`review_by`）；
 2＝量具坏（源码/契约读不到、版本⛔ 配对、源码与契约钉的那份⛔ 同、某条要看的锚点⛔ 在、
@@ -73,7 +78,6 @@ ENDPOINTS_LEAK = 'endpoints: ["GET /health", "GET /selftest", "POST /sync"]'
 HEALTH_OK = "      return json({\n        ok: true,"
 HEALTH_OK_COMputed = "      return json({\n        ok: !missingConfig(env).length,"
 ENDPOINTS_OPEN = "endpoints: ["
-SYNC_TOKEN_ITEM = "SYNC_TOKEN"
 
 
 def _read_text(path):
@@ -81,8 +85,10 @@ def _read_text(path):
         return f.read()
 
 
-def _blob_sha1(data):
-    return hashlib.sha1(f"blob {len(data)}".encode("utf-8") + b"\x00" + data).hexdigest()
+def _digest(data):
+    """这份字节的 SHA-256 —— 只答"变过没"。git 的 blob 号是 SHA-1：本件⛔ 算它，
+       那等于在仓里多开一处弱哈希调用，而现有豁免绑⛔ 到别处（文件头口径 3、第 47 条）。"""
+    return hashlib.sha256(data).hexdigest()
 
 
 def _line_of(text, idx):
@@ -237,13 +243,13 @@ def _stringify_len(pairs):
         tail = "," if i + 1 < len(pairs) else ""
         lines.append(f'  "{key}": "{val}"{tail}')
     lines.append("}")
-    return len("\n".join(lines).encode("utf-8"))
+    return len("\n".join(lines).encode())
 
 
 def _first_stmt(body):
     for raw in body.split("\n"):
         line = raw.strip()
-        if not line or line.startswith("//") or line.startswith("/*"):
+        if not line or line.startswith(("//", "/*")):
             continue
         return line
     return ""
@@ -626,17 +632,19 @@ def main(argv=None):
     if err:
         print(f"{err} ⇒ exit 2")
         return 2
-    blob = _blob_sha1(data)
+    digest = _digest(data)
     source = contract.get("source", {})
+    pin = f"{source.get('sha256_of_bytes')!s}"
     today = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
-    print(f"根={root} 源码={rel} 字节={len(data)} blob={blob}")
+    print(f"根={root} 源码={rel} 字节={len(data)}")
+    print(f"这份字节现算 sha256={digest[:16]}… ／契约钉的={pin[:16]}…")
+    print(f"登记的 git 对象号（**展示用**，本件⛔ 重算 SHA-1、⛔ 联网）={source.get('blob_sha1')!s}")
     print(f"契约 owner={contract.get('owner')!s} review_by={contract.get('review_by')!s} 今日={today}")
 
     # 契约作废先判：源码一动就对不上钉的那份 ⇒ 下面这批 checker 的"我有没有瞎"是对着**旧代码**校准的，
     # 它报什么都不算结论。所以这一档拿 exit 2，规则读数只当**顺带诊断**打出来给人看是哪几条塌了。
-    if blob != source.get("blob_sha1") or len(data) != source.get("bytes"):
-        print(f"⚠️ 源码与契约钉的那份⛔ 同（登记 blob={source.get('blob_sha1')!s} / {source.get('bytes')!s} B）"
-              "⇒ 契约作废：重新看一眼，⛔ 改契约里的登记、或⛔ 改回代码。")
+    if digest != pin or len(data) != source.get("bytes"):
+        print("⚠️ 源码与契约钉的那份⛔ 同 ⇒ 契约作废：重新看一眼，⛔ 改契约里的登记、或⛔ 改回代码。")
         print("\n=== 顺带诊断（⛔ 作数，量具是对着另一份代码校准的）===")
         evaluate(src, expect, RULES, only)
         print("\n=== 判定 ===\n  ⛔ 绿：契约作废（源码动过）⇒ exit 2")
@@ -654,7 +662,7 @@ def main(argv=None):
         print(f"\n=== 判定 ===\n  🔴 契约 review_by={contract['review_by']} 已过期（owner={contract.get('owner')!s}）"
               "⇒ 重新看一眼，改期或删契约都算答复，exit 1")
         return 1
-    print(f"\n=== 判定 ===\n  绿：{len(RULES)} 条全等，且源码与契约钉的那份逐字节相同（blob {blob[:12]}…）。")
+    print(f"\n=== 判定 ===\n  绿：{len(RULES)} 条全等，且这份源码与契约钉的那份逐字节相同（sha256 {digest[:12]}…）。")
     return 0
 
 

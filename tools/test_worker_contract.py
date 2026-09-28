@@ -73,13 +73,14 @@ def fresh_tree(src=None, contract=None):
 
 
 def repined(src):
-    """改过源码的那一发要把契约里钉的那份 blob 一起换掉——
-       这模拟的是**真实场景**：有人改了 index.js、重跑了登记，但某条语义断言塌了。
-       ⛔ 钉的更新 = 「契约作废」那一档，另有 G8 专测它。"""
+    """改过源码的那一发要把契约里钉的那份字节指纹一起换掉——
+       这模拟的是**真实场景**：有人改了 index.js、重新登记过，但某条语义断言塌了。
+       ⛔ 钉的更新＝「契约作废」那一档，另有 G8 专测它。"""
     data = src.encode("utf-8")
     con = json.loads(json.dumps(PRISTINE_CON))
-    con["source"]["blob_sha1"] = wc._blob_sha1(data)
+    con["source"]["sha256_of_bytes"] = wc._digest(data)
     con["source"]["bytes"] = len(data)
+    con["source"]["blob_sha1"] = "(本发是临时树，git 对象号⛔ 重算——工具只看 sha256)"
     return con
 
 
@@ -247,4 +248,4 @@ print(f"\n合计 {len(_results)} 条，失败 {len(bad)} 条" + ("" if not bad e
 if bad:
     print("判定：⛔ 绿。第四道闸自己有⛔ 牙的那几条就在上面 ⇒ 它报的「全等」⛔ 算结论。")
     sys.exit(1)
-print(f"判定：全绿 ⇒ 15 条断言每条都有「它必然响」的对照，配对／版本戳／过期／瞎规则四样坏也都拦得住。")
+print("判定：全绿 ⇒ 15 条断言每条都有「它必然响」的对照，配对／版本戳／过期／瞎规则四样坏也都拦得住。")
