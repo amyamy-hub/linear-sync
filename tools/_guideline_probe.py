@@ -5,6 +5,7 @@ import hashlib
 
 
 def probe_a_weak_digest(data):
+# 实验位（故意把全式子写在**注释**里，代码行⛔ 出现）：若下面这行注释被点亮 ⇒ 规则按文本匹配、# 注释也算；⛔ 被点亮 ⇒ 它只看代码，横幅 48⑤ 那句"注释也算"当场撤回报错。见 hashlib.sha1(b"throwaway")
     """A：普通弱哈希摘要，真实误用的形状，⛔ 是 git 对象号。"""
     return hashlib.sha1(data).hexdigest()
 
