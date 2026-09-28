@@ -19,10 +19,10 @@
     `known_undeployed_versions`（按 id 前缀匹配 + kept_intentionally=true），⛔ 不靠"看不见"来消音。
 """
 import argparse
+import hashlib
 import json
 import os
 import re
-import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -60,28 +60,16 @@ def get_raw(path, token):
         return None, "%s: %s" % (type(e).__name__, str(e)[:100])
 
 
-GIT_BIN = os.environ.get("DRIFT_GIT_BIN", "git")
-
-
 def _git_blob_sha1(data):
-    """把「对象号怎么算」的定义权交回 git 自己：`git hash-object --stdin --no-filters`。
-    为什么⛔ 再手写 hashlib.sha1：bandit/B324 对**字面量** `hashlib.sha1(` 一律判弱哈希
-    （Codacy 在 L70/L72 连点三条，带 `usedforsecurity=False` 也⛔ 豁免）——而 git 的对象号本来就是
-    SHA-1 内容寻址、⛔ 安全用途。改成调 git：误报消失，且 git 日后换 sha256 我们也跟着对。
-    ⚠️ `--no-filters` 必带（本机 core.autocrlf=true，默认先把 CRLF 吃成 LF 再算 ⇒ 出假号）。
-    返回 (40 位十六进制 或 None, 错误说明)。git 不在／跑不动 ⇒ None，调用方记**没测到**，⛔ 崩、⛔ 拒跑。"""
-    try:
-        p = subprocess.run([GIT_BIN, "hash-object", "--stdin", "--no-filters"],
-                           input=data, capture_output=True, timeout=20)
-    except (OSError, subprocess.TimeoutExpired) as e:
-        return None, "调不到 git（%s）⇒ 源块 blob 没测到；可设 DRIFT_GIT_BIN 指路径" % type(e).__name__
-    if p.returncode != 0:
-        return None, "git hash-object 退出码 %s：%s ⇒ 源块 blob 没测到" % (
-            p.returncode, p.stderr.decode("utf-8", "replace")[:80])
-    out = p.stdout.decode("utf-8", "replace").strip().lower()
-    if not re.match(r"^[0-9a-f]{40}$", out):
-        return None, "git 回的值⛔ 是 40 位十六进制（%r）⇒ 记「没测到」" % (out[:40],)
-    return out, None
+    """git 的对象号**就是** SHA-1 内容寻址（⛔ 安全用途），照 git 的定义算：sha1("blob "+字节数+"\0"+字节)。
+    ⚠️ 为什么带 nosec：Codacy 的默认标准（bandit B324）对**字面量** `hashlib.sha1(` 一律判弱哈希，
+       实测 `usedforsecurity=False` 也⛔ 豁免（L70/L72 连点三条），改调 `git hash-object` 又被 B404/B603/B607 点四条
+       ⇒ 在"新增 issue = 0"的门禁下**没有绕的写法**。这里按行、按规则号豁免，并留下理由与反证：
+       本行算错，仓库里那套故障注入（24 条，含"源块 6B→5B"的变异用例）会当场红，⛔ 会静默放过。
+    ⚠️ 手工算时 `blob %d\0` 那三个字节⛔ 能省：省了就⛔ 是 git 的对象号（本机实测：同一份 10,860 B 源码，
+       正确包裹＝`3a698aff59f5…`，少个 \0 就变成别的号）。"""
+    payload = b"blob %d\0" % len(data) + data
+    return hashlib.sha1(payload, usedforsecurity=False).hexdigest(), None  # nosec B324  # 内容寻址，非安全用途
 
 
 def source_blob_from_multipart(data):
