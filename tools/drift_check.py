@@ -66,7 +66,7 @@ def _git_blob_sha1(data):
        按两个 pattern 各报一条（…insecure-hash-algorithm-sha1 与 Semgrep_python_crypto_rule-hash-sha1），它们⛔ 认
        `# nosec`、也⛔ 被 `usedforsecurity=False` 挡；**bandit 的 B324** 也在场，本行是被那两个一起压住的。
        ⇒ 门禁"新增 issue = 0"在这行⛔ 有绕的写法：那两条已逐条 Ignore＋写理由（登记＝横幅 44、执行＝46），而该豁免
-       绑在实例上、⛔ durable（第 47 条五发读数）。反证⛔ 一起被豁免：这行算错，24 条故障注入＋变异用例当场就红。
+       绑在实例上、⛔ durable（第 47 条五发读数）。反证⛔ 一起被豁免：这行算错，仓里 `tools/test_drift_check.py`（10 组 27 条，含变异自检）当场就红。
     ⚠️ 手工算时 `blob %d\0` 那三个字节⛔ 能省：省了就⛔ 是 git 的对象号（同一份 10,860 B 源码，正确包裹＝`3a698aff59f5…`）。"""
     payload = b"blob %d\0" % len(data) + data
     return hashlib.sha1(payload, usedforsecurity=False).hexdigest(), None  # nosec B324  # 内容寻址，非安全用途
