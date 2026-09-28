@@ -62,12 +62,12 @@ def get_raw(path, token):
 
 def _git_blob_sha1(data):
     """git 的对象号**就是** SHA-1 内容寻址（⛔ 安全用途），照 git 的定义算：sha1("blob "+字节数+"\0"+字节)。
-    ⚠️ 为什么带 nosec：Codacy 的默认标准（bandit B324）对**字面量** `hashlib.sha1(` 一律判弱哈希，
-       实测 `usedforsecurity=False` 也⛔ 豁免（L70/L72 连点三条），改调 `git hash-object` 又被 B404/B603/B607 点四条
-       ⇒ 在"新增 issue = 0"的门禁下**没有绕的写法**。这里按行、按规则号豁免，并留下理由与反证：
-       本行算错，仓库里那套故障注入（24 条，含"源块 6B→5B"的变异用例）会当场红，⛔ 会静默放过。
-    ⚠️ 手工算时 `blob %d\0` 那三个字节⛔ 能省：省了就⛔ 是 git 的对象号（本机实测：同一份 10,860 B 源码，
-       正确包裹＝`3a698aff59f5…`，少个 \0 就变成别的号）。"""
+    ⚠️ 这一行上**两套规则都在跑**（09-28 在同文件另放一处⛔ 受豁免的 SHA-1 现证）：**Opengrep**（Semgrep 分支）
+       按两个 pattern 各报一条（…insecure-hash-algorithm-sha1 与 Semgrep_python_crypto_rule-hash-sha1），它们⛔ 认
+       `# nosec`、也⛔ 被 `usedforsecurity=False` 挡；**bandit 的 B324** 也在场，本行是被那两个一起压住的。
+       ⇒ 门禁"新增 issue = 0"在这行⛔ 有绕的写法：那两条已逐条 Ignore＋写理由（登记＝横幅 44、执行＝46），而该豁免
+       绑在实例上、⛔ durable（第 47 条五发读数）。反证⛔ 一起被豁免：这行算错，24 条故障注入＋变异用例当场就红。
+    ⚠️ 手工算时 `blob %d\0` 那三个字节⛔ 能省：省了就⛔ 是 git 的对象号（同一份 10,860 B 源码，正确包裹＝`3a698aff59f5…`）。"""
     payload = b"blob %d\0" % len(data) + data
     return hashlib.sha1(payload, usedforsecurity=False).hexdigest(), None  # nosec B324  # 内容寻址，非安全用途
 
