@@ -4,8 +4,8 @@
     py tools/verify_all.py --show         # 只看清单与底线，⛔ 跑
     py tools/verify_all.py --raise-floors # 把底线抬到本次实测条数（加了断言之后跑这一发）
 
-为什么要这件：仓里现在有四件离线反证（漂移检测器套件、公开面三道闸、闸的反证、本件的自检），
-但"谁跑了、跑了几条"⛔ 有任何东西在管。而这条线反复栽的那一类坏是**静默跳过**：
+为什么要这件：仓里现在有六件离线反证（公开面三道闸、闸的反证、漂移检测器套件、Worker 契约闸、契约闸的反证、
+本件的自检），但"谁跑了、跑了几条"⛔ 有任何东西在管。而这条线反复栽的那一类坏是**静默跳过**：
 子进程零输出＝根本没跑（第 9 条①）、断言没执行＝假绿（第 47 条）、少跑一组照发"全绿"。
 ⇒ 本件的判据⛔ 只是"退出码 0"，是**每条件的断言条数⛔ 低于登记的底线**：
   条数只⛔ 降（有人删了用例、或某组用例整组没跑）⇒ 当场红；涨了只报⛔ 红（那是好事，但要你确认）。
@@ -33,10 +33,11 @@ sys.stdout.reconfigure(encoding="utf-8")
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MANIFEST_REL = os.path.join("drift", "verify_manifest.json")
-VERIFY_REVISION = "2026-09-28-verify-all-2"
+VERIFY_REVISION = "2026-09-29-verify-all-3"
 
 # 每件的"条数从哪来"写死在这里，⛔ 靠猜：
 #   rule_tables        ＝ 三张规则表长度之和（闸那件⛔ 有 `_results`）
+#   rules_len          ＝ 一张规则表 `RULES` 的长度（第四道闸：每条断言＝一行表项）
 #   results_after_main ＝ 调 main() 后读 `_results`
 #   results_top        ＝ 载入即跑（脚本型套件），再读 `_results`
 CHECKS = [
@@ -46,6 +47,10 @@ CHECKS = [
      "count_from": "results_top", "floor_key": "wall_suite"},
     {"id": "漂移检测器反证", "path": "tools/test_drift_check.py", "entry": "main",
      "count_from": "results_after_main", "floor_key": "drift_suite"},
+    {"id": "Worker 契约 15 条", "path": "tools/worker_contract.py", "entry": "main",
+     "count_from": "rules_len", "floor_key": "worker_contract_rules"},
+    {"id": "契约闸的反证（注入）", "path": "tools/test_worker_contract.py", "entry": "top",
+     "count_from": "results_top", "floor_key": "worker_suite"},
     {"id": "本件的自检（少跑必须红）", "path": "tools/test_verify_all.py", "entry": "top",
      "count_from": "results_top", "floor_key": "verify_suite"},
 ]
@@ -95,6 +100,11 @@ def run_one(root, ck):
 
     if ck["count_from"] == "rule_tables":
         n = len(mod.SHAPES) + len(mod.FPRS) + len(mod.PATHS)
+    elif ck["count_from"] == "rules_len":
+        tbl = getattr(mod, "RULES", None)
+        if tbl is None:
+            return 2, 0, 0, time.time() - t0, "模块里找不到 `RULES` 表 ⇒ 条数⛔ 可观测，判坏量具"
+        n = len(tbl)
     else:
         res = getattr(mod, "_results", None)
         if res is None:
