@@ -1,0 +1,10 @@
+{
+  "verify_all_min_version": "2026-09-28-verify-all-1",
+  "note": "底线＝这条线上每件离线反证**至少**要跑出多少条判据。条数只⛔ 升（有人删用例/整组没跑）⇒ verify_all 当场红；涨了只报⛔ 红，用 --raise-floors 把底线抬上去并与新增放进同一个 commit。",
+  "floors": {
+    "wall_gate_rules": 15,
+    "wall_suite": 19,
+    "drift_suite": 30,
+    "verify_suite": 13
+  }
+}
