@@ -13,3 +13,4 @@ def probe_a_weak_digest(data):
 def probe_b_percent_format(name):
     """B：百分号格式，今早那 44 条的同款写法。"""
     return "probe result for %s" % name
+# 复检一发 2026-09-28T12:50:00Z：只为让分析重跑；A/B 两处语句⛔ 动过。
