@@ -33,7 +33,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MANIFEST_REL = os.path.join("drift", "verify_manifest.json")
-VERIFY_REVISION = "2026-09-28-verify-all-1"
+VERIFY_REVISION = "2026-09-28-verify-all-2"
 
 # 每件的"条数从哪来"写死在这里，⛔ 靠猜：
 #   rule_tables        ＝ 三张规则表长度之和（闸那件⛔ 有 `_results`）
@@ -128,10 +128,31 @@ def verdict(bad, rows, bumped, raise_floors):
     return 1, rows, bumped
 
 
+def pairing_problems(checks, floors):
+    """两件必须一一对上：`CHECKS` 里每件都要有底线，清单里每条底线都要有对应件。
+       为什么单独查：上一版只查"件⛔ 过"，于是**有人把一件反证从 CHECKS 里摘掉**（或清单里漏一条），
+       聚合器就照着剩下几件报"全绿"——实测：摘掉漂移套件后总数从 77 掉到 47，返回码仍是 0。
+       这正是本件存在的理由，所以它⛔ 算"红"，算**量具坏**（exit 2）。"""
+    want = {ck["floor_key"] for ck in checks}
+    have = set(floors or {})
+    out = []
+    for k in sorted(want - have):
+        out.append(f"件「{k}」在清单里⛔ 底线 ⇒ 它会拿 0 当底线混过去")
+    for k in sorted(have - want):
+        out.append(f"清单里留着底线「{k}」，但 CHECKS 里⛔ 这一件 ⇒ **有件反证被摘走了**")
+    return out
+
+
 def run_all(root=ROOT, checks=None, floors=None, revision=VERIFY_REVISION, raise_floors=False):
     checks = CHECKS if checks is None else checks
     floors = {} if floors is None else floors
     print(f"聚合器版本戳={revision}  件数={len(checks)}  根={root}")
+    probs = pairing_problems(checks, floors)
+    if probs:
+        print("  ⛔ 清单与件表⛔ 配对（量具坏，先修这个再谈绿）：")
+        for q in probs:
+            print("     " + q)
+        return 2, [], []
     print(f"{'件':<26} {'退出':<5} {'条数':<6} {'底线':<6} {'失败':<5} 秒   备注")
     bad, rows, bumped = [], [], []
     for ck in checks:

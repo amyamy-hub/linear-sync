@@ -112,12 +112,26 @@ try:
     finally:
         shutil.rmtree(tmp2, ignore_errors=True)
 
+    print("\nV8 清单里留着底线、件却被摘走 ⇒ 期望 2（这就是「摘掉一件就永远绿」那个洞）")
+    stub(tmp, "two.py", "_results = [('a', True)]\ndef main(argv=None):\n    return 0\n")
+    code, rows, out = capture(tmp, [ck("good.py", "g"), ck("two.py", "t")],
+                              {"g": 3, "t": 1, "drift_suite": 30})
+    req("V8 返回码==2", code == 2, out)
+    req("V8 点名了「有件反证被摘走」", "被摘走" in out, out)
+
+    print("\nV9 件在、清单里⛔ 它的底线 ⇒ 期望 2（⛔ 能拿 0 当底线混过去）")
+    code, rows, out = capture(tmp, [ck("good.py", "g")], {})
+    req("V9 返回码==2", code == 2, out)
+    req("V9 点名了⛔ 底线", "⛔ 底线" in out, out)
+
     print("\nV7 真件端到端（排除本件，防递归）⇒ 期望 0")
     real = [c for c in va.CHECKS if c["floor_key"] != "verify_suite"]
     floors = {}
     try:
         with open(os.path.join(REPO, "drift", "verify_manifest.json"), encoding="utf-8") as f:
-            floors = json.loads(f.read())["floors"]
+            allf = json.loads(f.read())["floors"]
+        # 跑子集时底线也要配平，否则配对检查会（正确地）把它判成"有件被摘走"
+        floors = {k: v for k, v in allf.items() if k in {c["floor_key"] for c in real}}
     except (OSError, ValueError) as e:
         req("V7 清单读得到", False, f"{type(e).__name__}")
     if floors:
