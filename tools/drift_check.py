@@ -11,6 +11,7 @@
     不是**正在服务**的那一份。必须先取 deployments[0].versions[0].version_id，再读那个版本。
   * etag 在 versions/{id} 的 resources.script.etag；绑定在 resources.bindings。
   * 有"上传了但没部署"的版本时，字节级判据不可用 ⇒ 本脚本会单独报这一条，而不是误报"线上≠仓库"。
+  * ⭐ 09-28 现读：CF 的 `/download` 回 **multipart 打包件** ⇒ 整包 etag / 整包字节永⛔ 能证「线上==仓库」，必须解包取源块算 git blob SHA-1（闸门 2c）。
   * ⚠️ 两个列表端点**都只回一页**，默认 10 条封顶 ⇒ 一律带 per_page=100，并在页满时明说"可能还有"。
   * ⭐ 09-24 修掉的盲区：旧版只把**最新版**与服务版本比 ⇒ 一旦再来一次合法部署，
     旧的未部署版本就**从告警里消失**（不是被拆雷，是探测器看不见了）。现在扫**全集**，
@@ -18,6 +19,7 @@
     `known_undeployed_versions`（按 id 前缀匹配 + kept_intentionally=true），⛔ 不靠"看不见"来消音。
 """
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -40,9 +42,75 @@ MAX_DETAIL_GETS = 10   # 未部署版本可能很多，逐个取详情会打爆�
 # 恒不触发——现读实测今天就是恒不响（登记的 min_version 与脚本 revision 逐字符相等）。
 # ⚠️ 串比较⛔ 等于日历序：非零填充（2026-9-26）跨月那侧会把"更新的要求"判成"不更新"⇒ 静默放行。
 # ⇒ 先校验格式，再要求两侧完全相等，任一方向不一致都拒跑。
-TOOL_REVISION = "2026-09-27-slot-etag-gate"
+TOOL_REVISION = "2026-09-28-multipart-source-blob"
 REV_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def get_raw(path, token):
+    """只读取裸字节（/download 用）。返回 (bytes 或 None, 错误说明)。
+    ⚠️ 取不到产物字节属于"没测到"，⛔ 走 fail()——那会把"我这侧没读到"上报成"检测器跑不动"。"""
+    req = urllib.request.Request(API + path, headers={"Authorization": "Bearer " + token})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return r.read(), None
+    except urllib.error.HTTPError as e:
+        return None, "HTTP %s" % e.code
+    except (urllib.error.URLError, OSError) as e:
+        return None, "%s: %s" % (type(e).__name__, str(e)[:100])
+
+
+def _git_blob_sha1(data):
+    """git 的对象号**就是** SHA-1 内容寻址（⛔ 安全用途），照 git 的定义算：sha1("blob "+字节数+"\0"+字节)。
+    ⚠️ 为什么带 nosec：Codacy 的默认标准（bandit B324）对**字面量** `hashlib.sha1(` 一律判弱哈希，
+       实测 `usedforsecurity=False` 也⛔ 豁免（L70/L72 连点三条），改调 `git hash-object` 又被 B404/B603/B607 点四条
+       ⇒ 在"新增 issue = 0"的门禁下**没有绕的写法**。这里按行、按规则号豁免，并留下理由与反证：
+       本行算错，仓库里那套故障注入（24 条，含"源块 6B→5B"的变异用例）会当场红，⛔ 会静默放过。
+    ⚠️ 手工算时 `blob %d\0` 那三个字节⛔ 能省：省了就⛔ 是 git 的对象号（本机实测：同一份 10,860 B 源码，
+       正确包裹＝`3a698aff59f5…`，少个 \0 就变成别的号）。"""
+    payload = b"blob %d\0" % len(data) + data
+    return hashlib.sha1(payload, usedforsecurity=False).hexdigest(), None  # nosec B324  # 内容寻址，非安全用途
+
+
+def source_blob_from_multipart(data):
+    """CF 的 /download 回的是 **multipart 打包件**（09-28 现读：整包 11,043 B，内含 name="index.js" 那块 10,860 B）。
+    ⇒ 整包 etag / 整包字节都⛔ 能代表源文件，"拿整份 /download 字节算 blob"这种写法结构上永⛔ 成立。
+    这里取入口脚本那一块，算它的 **git blob SHA-1**。返回 (sha1 或 None, 这块的来历描述)。"""
+    if not data or not data.startswith(b"--"):
+        return None, "返回体⛔ 是 multipart 形态（前 2 字节=%r）⇒ 取法要改，这一项记「没测到」" % (data[:2] if data else b"")
+    try:
+        boundary = data[2:data.index(b"\r\n")].decode("utf-8", "replace")
+    except ValueError:
+        return None, "multipart 头部读不出边界 ⇒ 记「没测到」"
+    cand = []
+    for part in data.split(b"--" + boundary.encode()):
+        if part.startswith(b"--"):
+            continue
+        if part.startswith(b"\r\n"):
+            part = part[2:]
+        if part.endswith(b"\r\n"):
+            part = part[:-2]
+        if not part:
+            continue
+        idx = part.find(b"\r\n\r\n")
+        if idx < 0:
+            continue
+        head = part[:idx].decode("utf-8", "replace")
+        body = part[idx + 4:]
+        m = re.search(r'name="([^"]+)"', head)
+        nm = m.group(1) if m else "?"
+        is_js = (nm.endswith(".js") or "javascript" in head.lower())
+        sh, sherr = _git_blob_sha1(body)
+        if sherr:
+            return None, sherr
+        cand.append((nm, len(body), sh, is_js))
+    if not cand:
+        return None, "multipart 里解不出任何块 ⇒ 记「没测到」（⛔ 当成「线上没有源文件」）"
+    chosen = [c for c in cand if c[3]] or cand
+    chosen.sort(key=lambda c: -c[1])
+    best = chosen[0]
+    return best[2], "块 name=%s %d B（共 %d 块：%s）" % (
+        best[0], best[1], len(cand), ", ".join("%s/%dB" % (c[0], c[1]) for c in cand))
 
 
 def fail(msg):
@@ -95,6 +163,8 @@ def listed_prefixes(ledger):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ledger", default=os.path.join(os.path.dirname(__file__), os.pardir, "drift", "known_good.json"))
+    ap.add_argument("--expect-blob", default="",
+                    help="仓库里那份源码的 git blob SHA-1（由调用方用 gh api / git hash-object --no-filters 现取）。⛔ 传 ⇒ 闸门 2c 只算源块、⛔ 对撞，并记「没测到」")
     a = ap.parse_args()
     token = os.environ.get("CLOUDFLARE_API_TOKEN")
     if not token:
@@ -105,6 +175,7 @@ def main():
         fail("读不了登记文件 %s：%s" % (a.ledger, e))
     acct, name = led["account_id"], led["worker"]
     drift = []
+    unverified = []   # ⭐ 09-28 起：“没测到”必须单独记一条，终判语必须引用它，⛔ 让它混进“无漂移”
 
     req = led.get("detector_min_version")
     if req is None:
@@ -122,6 +193,9 @@ def main():
     deps = (dep.get("result") or {}).get("deployments") or []
     if not deps:
         fail("没有任何 deployment，线上根本没部署过？")
+    ri = dep.get("result_info") or {}
+    if ri.get("total_count") is None:
+        unverified.append("deployments 信封缺 total_count（本页 %d，per_page=%d）⇒ “这就是全部 deployment”没测到（09-28 现读：该端点正常是**带** result_info 的，缺 ⇒ 形态变了，⛔ 静默当成完整）" % (len(deps), PER_PAGE))
     ri = dep.get("result_info") or {}
     if ri.get("total_count") is not None and ri["total_count"] != len(deps):
         drift.append("deployments 没拉全：本页 %d，信封 total_count=%s ⇒ 未部署扫描可能不全" % (len(deps), ri["total_count"]))
@@ -157,6 +231,7 @@ def main():
     # 闸门 2b：/download 给的是【脚本槽位当前内容】，不是【服务版本】的内容。
     # 只有槽位 etag == 服务版本 etag 时，那份字节才代表线上。09-24 的 #10 是反例：
     # 上传未部署却占住槽位、被之后每次 dashboard 保存继承，线上跑了 1.5 小时打包件。
+    slot_ok = False
     slot = get("/accounts/%s/workers/scripts" % (acct,), token)
     slot_rows = slot.get("result") or []
     if isinstance(slot_rows, dict):
@@ -169,10 +244,37 @@ def main():
         print("· 槽位 etag      : %s…" % slot_etag[:16])
         if not slot_etag:
             drift.append("槽位记录里没有 etag 字段 => 字节判据此刻不可用；没测到 ≠ 没有")
+        elif slot_etag == etag:
+            slot_ok = True
         elif slot_etag != etag:
             drift.append("槽位 etag(%s…) ≠ 服务版本 etag(%s…) => /download 回的是最后一次上传，"
                          "⛔ 用它下「线上==仓库」的判；本轮那条字节比对结论作废"
                          % (slot_etag[:8], etag[:8]))
+
+    # ⭐ 闸门 2c（09-28 新增）：etag 相等只证「槽位 == 服务版本」，⛔ 证「线上 == 仓库」。
+    # 要证后者必须把 /download 的**打包件拆开**、取入口脚本那块、算 git blob SHA-1，再与仓库那份对撞。
+    # 现读实物：整包 11,043 B、内含 name="index.js" 那块 10,860 B，那块逐字节等于主干 src/index.js（blob 3a698aff…）。
+    if slot_ok:
+        dl, derr = get_raw("/accounts/%s/workers/scripts/%s/download?version_id=%s" % (acct, name, serving), token)
+        if derr:
+            unverified.append("产物字节取不到（%s）⇒「线上==仓库」这格记**没测到**" % derr)
+        else:
+            got, desc = source_blob_from_multipart(dl)
+            if not got:
+                unverified.append("源块解不出来：%s ⇒「线上==仓库」记**没测到**" % desc)
+            else:
+                print("\u00b7 源块 blob      : %s  <- %s" % (got[:16], desc))
+                want = (a.expect_blob or "").strip().lower()
+                if not want:
+                    unverified.append("⛔ 传 --expect-blob ⇒ 源块只算出来、⛔ 对撞（有读数 ≠ 已验证）")
+                elif got != want:
+                    drift.append("线上服务版本的源块 blob=%s ≠ 仓库传入 blob=%s ⇒ **线上⛔ 等于仓库**"
+                                 % (got[:16], want[:16]))
+                else:
+                    print("  ✅ 源块 blob == 仓库那份 ⇒ 线上 == 仓库（现证，⛔ 靠登记值）")
+    else:
+        unverified.append("闸门 2b 未放行（槽位 etag 取不到，或与版本 etag 不等）⇒ 2c 跳过，字节判据此刻不可用；"
+                          "具体原因见上面那条漂移，⛔ 把这次读成「已核对」")
 
     if etag != led["artifact_etag"]:
         drift.append("etag 与登记值不同 ⇒ 线上产物不是登记过的那一份")
@@ -188,6 +290,9 @@ def main():
     if not items:
         drift.append("拿不到 versions 列表 ⇒「未部署上传」这一项根本没测到，⛔ 允许它混进一次\"无漂移\"")
     else:
+        ri2 = vs.get("result_info") or {}
+        if ri2.get("total_count") is None:
+            unverified.append("versions 信封缺 total_count（本页 %d，per_page=%d）⇒ 无法证明这一页就是全部版本；「未部署扫描完整」这一项记**没测到**（minimax 第 1 段挑出：原先这里与下面“取满”两道闸会同时静默）"  % (len(items), PER_PAGE))
         ri2 = vs.get("result_info") or {}
         if ri2.get("total_count") is not None and ri2["total_count"] != len(items):
             drift.append("versions 没拉全：本页 %d，信封 total_count=%s ⇒ 未部署扫描不完整，⛔ 报无漂移"
@@ -234,7 +339,13 @@ def main():
             print("⚠️ 漂移：%s" % d)
         print("\n判定：需要人看。登记值见 drift/known_good.json；确认线上正确后**改登记值**而不是忽略告警。")
         sys.exit(1)
-    print("判定：无漂移（etag / 绑定集合 / 服务版本与登记一致；未部署版本已全部逐个核查并如实归类）。")
+    if unverified:
+        print("判定：本轮未报漂移，但有 %d 项**没测到**（≠ 已验证）：" % len(unverified))
+        for u in unverified:
+            print("  · 没测到：%s" % u)
+        print("  ⇒ 这些格子⛔ 算通过。要补齐：deployments/versions 信封形态、或带 --expect-blob 现读仓库 blob 再跑。")
+    else:
+        print("判定：未报漂移，且本轮列出的判据**都取到了读数**（etag / 槽位 etag / 源块 blob 对撞 / 绑定集合 / 未部署版本）。")
     sys.exit(0)
 
 
