@@ -1,6 +1,6 @@
 """漂移检测器的故障注入 + 变异自检（⛔ 联网、⛔ 要凭据、⛔ 碰线上）。
 
-    py tools/test_drift_check.py            # 跑 10 组用例 / 27 条断言
+    py tools/test_drift_check.py            # 跑 11 组用例 / 30 条断言
     py tools/test_drift_check.py -v         # 失败时多打一段输出
 
 为什么这件**必须在仓里**（横幅第 47 条④）：`tools/drift_check.py` 里算 git 对象号那一处弱哈希调用是 Codacy 的误报，
@@ -19,6 +19,11 @@
      那一行上，这里再写一次全式子就是一发新的、⛔ 被豁免覆盖的告警（横幅 47 第 3 发现测：同文件另一处被点了 4 条）。
   4. 字符串一律 f-string，⛔ 百分号格式：这条不是洁癖——本件第一版用 `%` 写了 17 处，Codacy 当场记 17 条新增
      （UP031），把门禁点亮成「23 new issues」。**新件⛔ 给门禁添活**，尤其⛔ 添那种「豁免只管那一行」管不到的活。
+  5. **用例 11 是一道「行号钉」**：Codacy 的逐条 Ignore 绑的是 issue 实例＋**行号**（横幅 47 五发读数：
+     那处调用从 L72 漂到 L76，豁免过的两条立刻被重新计入新增；送回 L72 就⛔ 报）。用户 09-28 拍了
+     「维持逐条 Ignore、⛔ 去关规则」（横幅 49⑤乙）⇒ 这条规矩⛔ 能只写在墙上，它钉在这儿。
+     真要挪那一行时的**唯一正确顺序**：① 去面板对新行号重做逐条 Ignore（或撤销旧豁免重来）；② 再把
+     `PIN_EXEMPT_LINE` 与横幅 44/46 一起更新；③ 在 PR 正文贴面板回执。**顺序反了＝先给红灯放行。**
 """
 import importlib.util
 import json
@@ -32,6 +37,10 @@ VERBOSE = "-v" in sys.argv[1:]
 
 BLOB_5 = "6a8165460570531a1247bd99a73b53a5a6e500d5"     # git hash-object over b"abcde"
 BLOB_6 = "00dedf6bd5f3e493ce8b03c889912f47b01297d4"     # 同上，内容是 b"abcde" 加一个换行
+# 行号钉（横幅 47②(a) 测出来的规矩、49⑤乙 选的维持现状）：被逐条 Ignore 那一处调用的行号与定位标记。
+PIN_EXEMPT_LINE = 72
+EXEMPT_MARK = "# 内容寻址，非安全用途"
+
 ETAG = "b5cc1a50" * 8
 OTHER_ETAG = "5d4e6aad" * 8
 SRC5 = b"abcde"
@@ -213,13 +222,31 @@ def main():
         finally:
             os.remove(mutpath)
 
+    print("\n用例 11⭐｜行号钉：被逐条 Ignore 那一行⛔ 漂（漂了就没人在门禁里提醒我们）")
+    src_lines = src.split("\n")
+    at = [i + 1 for i, l in enumerate(src_lines) if EXEMPT_MARK in l]
+    req(f"C11a 那处调用点只有一处（现读 L{at}）", len(at) == 1,
+        "多出来那一处⛔ 在任何豁免覆盖内（横幅 48④），要单独处理；一处都⛔ ⇒ 标记漂了")
+    ok_line = len(at) == 1 and at[0] == PIN_EXEMPT_LINE
+    req(f"C11b 那一行仍在 L{PIN_EXEMPT_LINE}（现读 L{at}）", ok_line,
+        "行号漂 ⇒ Codacy 会把它当**新** issue（横幅 47）；正确顺序见本文件头约束 5——"
+        "先重做面板 Ignore，再改 PIN_EXEMPT_LINE，⛔ 只改常量当没事。")
+    if not at:
+        req("C11c 反向对照（插一行看它动不动）", False, "找不到标记 ⇒ 无从插入，这条钉⛔ 可自证")
+    else:
+        k = at[0] - 1
+        pin_mut = "\n".join(src_lines[:k] + ["# 反向对照：故意在被豁免行上方插一行"] + src_lines[k:])
+        moved = [i + 1 for i, l in enumerate(pin_mut.split("\n")) if EXEMPT_MARK in l]
+        req(f"C11c 插一行后 C11b 必须转红（现在给 L{moved}）", moved != [PIN_EXEMPT_LINE],
+            "插了行号还⛔ 变 ⇒ C11b 是恒真的假闸，这条验收⛔ 算做过")
+
     bad_count = len([1 for _, v in _results if not v])
     names = ", ".join(n for n, v in _results if not v)
     print(f"\n合计 {len(_results)} 条，失败 {bad_count} 条" + ("" if not bad_count else f"：{names}"))
     if bad_count:
         print("判定：⛔ 绿。有断言没通过（或变异锚点漂了）——本文件就是那条豁免的反证，它红着就说明⛔ 能签。")
         return 1
-    print("判定：全绿 ⇒ `drift_check.py` 里那行 SHA-1 若算错，这里当场红（横幅 44/46 那条豁免的反证在场且可复算）。")
+    print("判定：全绿 ⇒ 那处弱哈希调用若算错、或它漂了行号，这里当场红（横幅 44/46 那条豁免的反证＋行号钉都在场且可复算）。")
     return 0
 
 
