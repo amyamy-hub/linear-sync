@@ -60,6 +60,18 @@ def get_raw(path, token):
         return None, "%s: %s" % (type(e).__name__, str(e)[:100])
 
 
+def _git_blob_sha1(data):
+    """git 的对象号**就是** SHA-1（内容寻址，⛔ 安全用途）。Codacy 在 L91 上点了两条：
+       "SHA1 considered insecure" ＋ "Consider usedforsecurity=False" ⇒ 这里按它给的官方口径**声明意图**，
+       ⛔ 加抑制注释（那等于把灯蒙上）。带该参数则 digest 与普通 sha1 逐位相同（本机 py3.14 实测），
+       老版本没有这个关键字 ⇒ 回退，⛔ 为此拒跑。"""
+    payload = b"blob %d\0" % len(data) + data
+    try:
+        return hashlib.sha1(payload, usedforsecurity=False).hexdigest()
+    except TypeError:
+        return hashlib.sha1(payload).hexdigest()
+
+
 def source_blob_from_multipart(data):
     """CF 的 /download 回的是 **multipart 打包件**（09-28 现读：整包 11,043 B，内含 name="index.js" 那块 10,860 B）。
     ⇒ 整包 etag / 整包字节都⛔ 能代表源文件，"拿整份 /download 字节算 blob"这种写法结构上永⛔ 成立。
@@ -88,7 +100,7 @@ def source_blob_from_multipart(data):
         m = re.search(r'name="([^"]+)"', head)
         nm = m.group(1) if m else "?"
         is_js = (nm.endswith(".js") or "javascript" in head.lower())
-        cand.append((nm, len(body), hashlib.sha1(b"blob %d\0" % len(body) + body).hexdigest(), is_js))
+        cand.append((nm, len(body), _git_blob_sha1(body), is_js))
     if not cand:
         return None, "multipart 里解不出任何块 ⇒ 记「没测到」（⛔ 当成「线上没有源文件」）"
     chosen = [c for c in cand if c[3]] or cand
