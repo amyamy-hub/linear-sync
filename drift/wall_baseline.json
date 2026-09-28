@@ -1,10 +1,12 @@
 {
-  "wall_scan_min_version": "2026-09-28-wall-scan-1",
+  "wall_scan_min_version": "2026-09-28-wall-scan-2",
   "forbidden_literals_sha256": [
     "007d612010784b9cc0f3270b4c81efc2adb140dd453f43d2637937c57a07c99d",
+    "06518367d7f5589a3be31b8b92f18de5b21b5970c63cb6511d3c5c28c1550cfc",
     "1248442115e1eb2b6c04c2856cbad41b57d58cd2b8cec9013a2442f728d54d1d",
     "1d10a4e536dcf3265e50098d5ffacf66bb11f0e5b3635f97fba793cccc44906e",
-    "3591ce21ac4d30a070c56ae99d9ae9621a655cd82d8208be5970c673e7f5a69a"
+    "3591ce21ac4d30a070c56ae99d9ae9621a655cd82d8208be5970c673e7f5a69a",
+    "63bac843f5e022e66ab56ba21c02648c10ad7c79c80be2663fa401101136a953"
   ],
   "note": "登记＝「看过、判定⛔ 是泄漏、并写下理由」，⛔ 等于默认放行。新增一条⛔ 在表内的命中 ⇒ exit 1；表里某条 anchor 读不到了 ⇒ exit 2（基线在漂）。锚点用内容⛔ 用行号（第 14 条②、第 47 条②(a)：行号会随一次插入整体漂掉）。",
   "entries": [
