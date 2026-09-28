@@ -56,7 +56,7 @@ def get_raw(path, token):
             return r.read(), None
     except urllib.error.HTTPError as e:
         return None, "HTTP %s" % e.code
-    except Exception as e:
+    except (urllib.error.URLError, OSError) as e:
         return None, "%s: %s" % (type(e).__name__, str(e)[:100])
 
 
@@ -93,9 +93,9 @@ def source_blob_from_multipart(data):
         return None, "multipart 里解不出任何块 ⇒ 记「没测到」（⛔ 当成「线上没有源文件」）"
     chosen = [c for c in cand if c[3]] or cand
     chosen.sort(key=lambda c: -c[1])
-    nm, ln, sh, _ = chosen[0]
-    return sh, "块 name=%s %d B（共 %d 块：%s）" % (
-        nm, ln, len(cand), ", ".join("%s/%dB" % (c[0], c[1]) for c in cand))
+    best = chosen[0]
+    return best[2], "块 name=%s %d B（共 %d 块：%s）" % (
+        best[0], best[1], len(cand), ", ".join("%s/%dB" % (c[0], c[1]) for c in cand))
 
 
 def fail(msg):
@@ -257,8 +257,9 @@ def main():
                                  % (got[:16], want[:16]))
                 else:
                     print("  ✅ 源块 blob == 仓库那份 ⇒ 线上 == 仓库（现证，⛔ 靠登记值）")
-    elif not any("槽位 etag" in d for d in drift):
-        unverified.append("槽位 etag 没读到 ⇒ 闸门 2c 跳过（字节判据此刻不可用）")
+    else:
+        unverified.append("闸门 2b 未放行（槽位 etag 取不到，或与版本 etag 不等）⇒ 2c 跳过，字节判据此刻不可用；"
+                          "具体原因见上面那条漂移，⛔ 把这次读成「已核对」")
 
     if etag != led["artifact_etag"]:
         drift.append("etag 与登记值不同 ⇒ 线上产物不是登记过的那一份")
