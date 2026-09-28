@@ -22,7 +22,7 @@ import argparse
 import json
 import os
 import re
-import hashlib
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -60,16 +60,28 @@ def get_raw(path, token):
         return None, "%s: %s" % (type(e).__name__, str(e)[:100])
 
 
+GIT_BIN = os.environ.get("DRIFT_GIT_BIN", "git")
+
+
 def _git_blob_sha1(data):
-    """git 的对象号**就是** SHA-1（内容寻址，⛔ 安全用途）。Codacy 在 L91 上点了两条：
-       "SHA1 considered insecure" ＋ "Consider usedforsecurity=False" ⇒ 这里按它给的官方口径**声明意图**，
-       ⛔ 加抑制注释（那等于把灯蒙上）。带该参数则 digest 与普通 sha1 逐位相同（本机 py3.14 实测），
-       老版本没有这个关键字 ⇒ 回退，⛔ 为此拒跑。"""
-    payload = b"blob %d\0" % len(data) + data
+    """把「对象号怎么算」的定义权交回 git 自己：`git hash-object --stdin --no-filters`。
+    为什么⛔ 再手写 hashlib.sha1：bandit/B324 对**字面量** `hashlib.sha1(` 一律判弱哈希
+    （Codacy 在 L70/L72 连点三条，带 `usedforsecurity=False` 也⛔ 豁免）——而 git 的对象号本来就是
+    SHA-1 内容寻址、⛔ 安全用途。改成调 git：误报消失，且 git 日后换 sha256 我们也跟着对。
+    ⚠️ `--no-filters` 必带（本机 core.autocrlf=true，默认先把 CRLF 吃成 LF 再算 ⇒ 出假号）。
+    返回 (40 位十六进制 或 None, 错误说明)。git 不在／跑不动 ⇒ None，调用方记**没测到**，⛔ 崩、⛔ 拒跑。"""
     try:
-        return hashlib.sha1(payload, usedforsecurity=False).hexdigest()
-    except TypeError:
-        return hashlib.sha1(payload).hexdigest()
+        p = subprocess.run([GIT_BIN, "hash-object", "--stdin", "--no-filters"],
+                           input=data, capture_output=True, timeout=20)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return None, "调不到 git（%s）⇒ 源块 blob 没测到；可设 DRIFT_GIT_BIN 指路径" % type(e).__name__
+    if p.returncode != 0:
+        return None, "git hash-object 退出码 %s：%s ⇒ 源块 blob 没测到" % (
+            p.returncode, p.stderr.decode("utf-8", "replace")[:80])
+    out = p.stdout.decode("utf-8", "replace").strip().lower()
+    if not re.match(r"^[0-9a-f]{40}$", out):
+        return None, "git 回的值⛔ 是 40 位十六进制（%r）⇒ 记「没测到」" % (out[:40],)
+    return out, None
 
 
 def source_blob_from_multipart(data):
@@ -100,7 +112,10 @@ def source_blob_from_multipart(data):
         m = re.search(r'name="([^"]+)"', head)
         nm = m.group(1) if m else "?"
         is_js = (nm.endswith(".js") or "javascript" in head.lower())
-        cand.append((nm, len(body), _git_blob_sha1(body), is_js))
+        sh, sherr = _git_blob_sha1(body)
+        if sherr:
+            return None, sherr
+        cand.append((nm, len(body), sh, is_js))
     if not cand:
         return None, "multipart 里解不出任何块 ⇒ 记「没测到」（⛔ 当成「线上没有源文件」）"
     chosen = [c for c in cand if c[3]] or cand
