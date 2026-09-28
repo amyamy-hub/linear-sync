@@ -1,0 +1,80 @@
+{
+  "worker_contract_min_version": "2026-09-29-worker-contract-1",
+  "owner": "审计位",
+  "review_by": "2026-10-29",
+  "why": "墙上关于 src/index.js 的散文断言登记成数据。expect 里的值全部由 tools/worker_contract.py 从源码现算后落在这里；判定＝现算 vs 登记。每条规则都配一发「它必然响」的探针（同件的 --root 自检）。源码一改就对不上 source.blob_sha1 ⇒ exit 2，逼下一个人重新看一眼。",
+  "source": {
+    "path": "src/index.js",
+    "bytes": 10860,
+    "blob_sha1": "3a698aff59f50f413d217edccc602d1b63258a14",
+    "LF_lines": 364,
+    "CR": 0
+  },
+  "expect": {
+    "W1": {
+      "first_stmt": "if (!env.SYNC_TOKEN) return true;"
+    },
+    "W2": {
+      "count": 1
+    },
+    "W3": {
+      "body_bytes": 29
+    },
+    "W4": {
+      "must_absent": "authorized("
+    },
+    "W5": {
+      "file_count": 1,
+      "in_selftest": true
+    },
+    "W6": {
+      "keys": [
+        "Name",
+        "Linear ID",
+        "Identifier",
+        "Status",
+        "Assignee",
+        "Labels",
+        "URL",
+        "Updated At",
+        "Description"
+      ]
+    },
+    "W7": {
+      "key": "Labels",
+      "cap": 10,
+      "key_count": 9
+    },
+    "W8": {
+      "count": 2
+    },
+    "W9": {
+      "operator": "<="
+    },
+    "W10": {
+      "names": [
+        "LINEAR_API_KEY",
+        "NOTION_TOKEN",
+        "NOTION_DATABASE_ID"
+      ]
+    },
+    "W11": {
+      "absent_item": "SYNC_TOKEN"
+    },
+    "W12": {
+      "dryrun_before_counter": true
+    },
+    "W13": {
+      "cap": 5
+    },
+    "W14": {
+      "count": 2,
+      "absent": "selftest"
+    },
+    "W15": {
+      "literal": "ok: true,",
+      "count": 1
+    }
+  },
+  "readings_note": "行号只在工具的读数段现算打印，⛔ 进本件登记（第 14 条②：行号必漂）。墙上「toProperties 起于第 179 行」「since 守卫在第 149 行」由那一行现算复核。"
+}

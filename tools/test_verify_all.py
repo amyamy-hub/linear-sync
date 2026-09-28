@@ -57,6 +57,12 @@ def ck(fname, floor_key):
             "count_from": "results_after_main", "floor_key": floor_key}
 
 
+def ck_len(fname, floor_key):
+    """第四道闸那种「条数＝规则表长度」的取法也要有对照：这一支新加的代码，⛔ 跑就等于没测过。"""
+    return {"id": fname, "path": fname, "entry": "main",
+            "count_from": "rules_len", "floor_key": floor_key}
+
+
 def capture(root, checks, floors):
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
@@ -123,6 +129,18 @@ try:
     code, rows, out = capture(tmp, [ck("good.py", "g")], {})
     req("V9 返回码==2", code == 2, out)
     req("V9 点名了⛔ 底线", "⛔ 底线" in out, out)
+
+    print("\nV10 条数从规则表长度取（`rules_len` 那一支）⇒ 期望 0 且数到 2")
+    stub(tmp, "rules.py", "RULES = [(1, 2), (3, 4)]\ndef main(argv=None):\n    return 0\n")
+    code, rows, out = capture(tmp, [ck_len("rules.py", "r")], {"r": 2})
+    req("V10 返回码==0", code == 0, out)
+    req("V10 条数取到 2", bool(rows) and rows[0][2] == 2, rows)
+
+    print("\nV11 走 `rules_len` 但件里⛔ `RULES` ⇒ 期望 2（⛔ 是拿 0 当条数混过去）")
+    stub(tmp, "norules.py", "def main(argv=None):\n    return 0\n")
+    code, rows, out = capture(tmp, [ck_len("norules.py", "n")], {"n": 1})
+    req("V11 返回码==2", code == 2, out)
+    req("V11 点名了 RULES", "RULES" in out, out)
 
     print("\nV7 真件端到端（排除本件，防递归）⇒ 期望 0")
     real = [c for c in va.CHECKS if c["floor_key"] != "verify_suite"]
