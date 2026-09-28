@@ -139,7 +139,7 @@ def run_all(root=ROOT, checks=None, floors=None, revision=VERIFY_REVISION, raise
         floor = floors.get(ck["floor_key"])
         ok = (code == 0) and (failed == 0) and (floor is not None) and (n >= floor)
         rows.append((ck, code, n, floor, failed, dt, note, ok))
-        print(f"{ck['id']:<26} {code:<5} {n:<6} {str(floor):<6} {failed:<5} {dt:.1f}   {note}")
+        print(f"{ck['id']:<26} {code:<5} {n:<6} {floor!s:<6} {failed:<5} {dt:.1f}   {note}")
         if not ok:
             if code != 0 or failed:
                 bad.append(f"{ck['id']}：退出码={code} 失败={failed}")
