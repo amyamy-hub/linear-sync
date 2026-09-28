@@ -62,13 +62,13 @@ CTXW = r"token|令牌|密钥|secret|credential|凭据|apikey|api key|口令|钥�
 FPRS = [
     # B1：凭据**长度**被念出来，且紧挨着一串字面量。⛔ 用"同行有凭据词"的宽版——那会把
     #     描述规则本身的话（"三十七位十六进制"）也量成泄漏（本仓实测误响 8 处）。
-    ("B1 长度声明",
+    ("B1 长度声明", (
      r"[0-9]{2,3}\s*(?:位|字符|个字符)\s*(?:hex\s*、\s*前缀\s*`(?P<fp>[0-9A-Za-z]{2,12})`"
-     r"|[:：]?\s*`(?P<fp2>[0-9A-Za-z]*[0-9][0-9A-Za-z]{2,})`)"),
+     r"|[:：]?\s*`(?P<fp2>[0-9A-Za-z]*[0-9][0-9A-Za-z]{2,})`)")),
     # B2：必须同一行 40 字以内出现"凭据词"才算，否则 Linear 附件 id 的"前缀 xxxx"这类普通标识符
     #     会被量成泄漏（本仓现读就有两处）。⛔ 收紧的代价是漏，是**放宽的代价是这台闸被人关掉**。
-    ("B2 前缀字面量",
-     rf"(?:{CTXW})[^\n]{{0,40}}(?:前缀|前 [0-9] 位|两头|前后)[^\`\n]{{0,8}}`(?P<fp>[0-9A-Za-z_]{{3,12}})`"),
+    ("B2 前缀字面量", (
+     rf"(?:{CTXW})[^\n]{{0,40}}(?:前缀|前 [0-9] 位|两头|前后)[^\`\n]{{0,8}}`(?P<fp>[0-9A-Za-z_]{{3,12}})`")),
     ("B3 两头都念", r"`(?P<fp>[0-9A-Za-z_]{2,12})…(?P<fp2>[0-9A-Za-z_]{2,12})`"),
     # B4：截断哈希。⛔ 能反推值，但能让任何一枚候选值被**离线确认** ⇒ 属「值／前缀／哈希⛔ 进墙」那一项。
     #     这条是本件写完当天自己撞出来的：横幅 52③ 念了"新旧两把的 sha256 前缀"。
@@ -77,13 +77,13 @@ FPRS = [
 PATHS = [
     # ⚠️ C1 词首⛔ 能用 `\b`：`cf_deploy_token.txt` 里 `token` 前面是下划线，那是**单词字符**
     #    ⇒ `\b` ⛔ 成立。第一版就是这么静默⛔ 响的（合成件当场把它抓出来）。
-    ("C1 落盘件文件名",
+    ("C1 落盘件文件名", (
      r"(?i)[^\s`\|()（）\[\]，,、]*(?:token|secret|passwd|password|credential)"
-     r"[^\s`\|()（）\[\]，,、]*\.(?:txt|json|env|pem|key|p12)"),
+     r"[^\s`\|()（）\[\]，,、]*\.(?:txt|json|env|pem|key|p12)")),
     # C2：只抓"指路句"——动词＋一个**带扩展名的具体文件**（宽版会把 `落在 ~/.bsk` 这类目录叙述也量进来）。
-    ("C2 指路句",
+    ("C2 指路句", (
      r"(?:值的存放|值在|落在|钥匙在|存放在|放在|存在)[^\`\n]{0,16}`?"
-     r"(?:%LOCALAPPDATA%\\[^\s`]+|~/[^\s`]*/[^\s`]*\.(?:txt|json|env|key|pem))"),
+     r"(?:%LOCALAPPDATA%\\[^\s`]+|~/[^\s`]*/[^\s`]*\.(?:txt|json|env|key|pem))")),
 ]
 
 
@@ -93,7 +93,7 @@ def _mk_probes():
     p = {}
     p["A1 GitHub PAT"] = "ghp_" + "A" * 36
     p["A2 Notion 风格令牌"] = "ntn_" + alpha[:14]
-    p["A3 JWT"] = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0." + "d" * 43
+    p["A3 JWT"] = ("eyJ" + "hbGciOiJIUzI1NiJ9" + "." + "eyJzdWIi" + "OiIxMjM0NTY3" + "ODkwIn0" + "." + "d" * 43)
     p["A4 Bearer 实值"] = "Authorization: Bearer " + alpha[:28]
     p["A5 CF 令牌形态"] = "vJEr" + "0" * 34 + "-_"
     p["A6 base64 带填充"] = ("U2VjcmV0UGF5bG9hZFRoYXRJc0xvbmdFbm91Z2hUb0ZsYWdBczZiNjRiYXNlNjQ"
@@ -223,14 +223,14 @@ def main(argv=None):
 
     try:
         base = json.loads(read_bytes(os.path.join(root, BASELINE_REL)).decode("utf-8"))
-    except Exception as e:
+    except (OSError, ValueError) as e:
         print(f"\n判定：⛔ 基线件读不到（{type(e).__name__}）⇒ 三道闸⛔ 能开，exit 2")
         return 2
     if base.get("wall_scan_min_version") != TOOL_REVISION:
         print("\n判定：⛔ 基线件与检测器版本⛔ 一致 ⇒ 两侧必须同改（原子闸），exit 2")
         return 2
     entries = base.get("entries", [])
-    today = datetime.date.today().isoformat()
+    today = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
 
     print("\n=== 闸 A｜明文值形状（基线＝空，任何命中都红）===")
     a_hits = [(fn, name, ln) for fn, data in files

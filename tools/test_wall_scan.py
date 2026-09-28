@@ -127,7 +127,7 @@ try:
     hp = os.path.join(t, "HANDOFF.md")
     lines = read_text(hp).split("\n")
     keep = [l for l in lines if anchor not in l]
-    ok = req("G3 注入点存在（那一行删得掉）", len(keep) < len(lines), f"anchor 一行都没命中")
+    ok = req("G3 注入点存在（那一行删得掉）", len(keep) < len(lines), "anchor 一行都没命中")
     if ok:
         write_text(hp, "\n".join(keep))
         code, out = run_gate(t)
