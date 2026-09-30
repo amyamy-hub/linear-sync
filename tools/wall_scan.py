@@ -20,8 +20,12 @@
   2. **锚点用内容⛔ 用行号**（第 14 条②、第 47 条②(a)：逐条 Ignore 绑行号，代码一插行就漂）。
      锚点读不到 ⇒ exit 2（基线在漂，⛔ 是"变干净了"）。
   3. **基线项自带 `owner` ＋ `review_by`**（第 22 条 b 那套）：过期 ⇒ exit 1，逼下一个人重新看一眼。
+  4. **扫描面⛔ 静默缩水**（09-30 补，第 40 条同款）：`load_files` 把三样分开交——读到的件、
+     跳过的件（超尺寸／读不到）、按扩展名⛔ 在面内的件数；"跳过"非空就 exit 2。
+     理由：一件都没读到手的时候，报"命中 0"是最贵的一种假绿。HANDOFF.md 现在 240 KB，
+     离 `MAX_BYTES` 只差一次大改——那次大改要是没人看见，这道闸就在一面⛔ 全的扫描上报绿。
 
-退出码：0＝三道闸都过；1＝有新增违规或有登记项过期；2＝量具坏（规则响⛔ 了／锚点漂了／基线件读不到／版本⛔ 一致）。
+退出码：0＝三道闸都过；1＝有新增违规或有登记项过期；2＝量具坏（规则响⛔ 了／锚点漂了／基线件读不到／版本⛔ 一致／**扫描面缺件**）。
 """
 
 import datetime
@@ -40,7 +44,7 @@ DOC_EXT = (".md", ".markdown")
 TEXT_EXT = (".md", ".markdown", ".py", ".js", ".json", ".toml", ".yml", ".yaml", ".txt")
 SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", "dist", "build"}
 MAX_BYTES = 2 * 1024 * 1024
-TOOL_REVISION = "2026-09-28-wall-scan-2"
+TOOL_REVISION = "2026-09-30-wall-scan-3"
 
 # ---------------- 闸 A｜明文值形状（基线＝空）----------------
 SHAPES = [
@@ -127,21 +131,32 @@ def read_bytes(path):
 
 
 def load_files(root):
+    """返回 (读到的件, 跳过账, 按扩展名⛔ 在面内的件数)。
+
+    ⚠️ 第二项必须**单独交出来**：上一版把它咽在 `len(files)` 里 ⇒ "扫到 18 件"和"只扫到 5 件"
+    打出一样的数，`件数=` 那行看着还是绿的。第三项是**口径**（二进制本来⛔ 该扫），⛔ 算故障。
+    """
     out = []
+    skipped = []
+    out_of_scope = 0
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
         for fn in filenames:
             p = os.path.join(dirpath, fn)
             if os.path.splitext(fn)[1].lower() not in TEXT_EXT:
+                out_of_scope += 1
                 continue
+            rel = os.path.relpath(p, root).replace("\\", "/")
             try:
                 if os.path.getsize(p) > MAX_BYTES:
+                    skipped.append((rel, "超尺寸"))
                     continue
                 data = read_bytes(p)
             except OSError:
+                skipped.append((rel, "读不到"))
                 continue
-            out.append((os.path.relpath(p, root).replace("\\", "/"), data))
-    return out
+            out.append((rel, data))
+    return out, skipped, out_of_scope
 
 
 def hits_for(rules, text):
@@ -210,8 +225,24 @@ def main(argv=None):
     root = DEFAULT_ROOT
     if "--root" in argv:
         root = os.path.abspath(argv[argv.index("--root") + 1])
-    files = load_files(root)
+    files, skipped, out_of_scope = load_files(root)
+    n_big = len([1 for _rel, why in skipped if why == "超尺寸"])
     print(f"根={root} 件数={len(files)} 检测器版本戳={TOOL_REVISION}")
+    print(f"扫描面对账：读到 {len(files)} 件｜跳过 {len(skipped)} 件（超尺寸 {n_big}／读不到 {len(skipped) - n_big}）"
+          f"｜按扩展名⛔ 在面内 {out_of_scope} 件")
+
+    missing_docs = [rel for rel, _why in skipped if rel.lower().endswith(DOC_EXT)]
+    if skipped:
+        print(f"\n判定：⛔ 绿。扫描面缺 {len(skipped)} 件（超尺寸 {n_big}／读不到 {len(skipped) - n_big}）"
+              "⇒ 三道闸的分母⛔ 全 ⇒ 这一格记『没测到』：⛔ 算「变干净了」，也⛔ 算「锚点漂了」，exit 2")
+        for rel, why in skipped[:12]:
+            print(f"     缺 {rel}（{why}）")
+        if len(skipped) > 12:
+            print(f"     …另有 {len(skipped) - 12} 件同因被跳过")
+        if missing_docs:
+            print(f"     其中 {len(missing_docs)} 件是给人看的文本（{', '.join(missing_docs[:6])}）"
+                  "⇒ 闸 B／C 的锚点判据同样⛔ 能开跑")
+        return 2
 
     bad = self_test(files)
     if bad:

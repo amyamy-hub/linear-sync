@@ -1,5 +1,5 @@
 {
-  "wall_scan_min_version": "2026-09-28-wall-scan-2",
+  "wall_scan_min_version": "2026-09-30-wall-scan-3",
   "forbidden_literals_sha256": [
     "007d612010784b9cc0f3270b4c81efc2adb140dd453f43d2637937c57a07c99d",
     "06518367d7f5589a3be31b8b92f18de5b21b5970c63cb6511d3c5c28c1550cfc",
