@@ -3,8 +3,8 @@
   "note": "底线＝这条线上每件离线反证**至少**要跑出多少条判据。条数只⛔ 升（有人删用例/整组没跑）⇒ verify_all 当场红；涨了只报⛔ 红，用 --raise-floors 把底线抬上去并与新增放进同一个 commit。 配对检查（v2 起）：CHECKS 与 floors 必须一一对上，否则 exit 2——摘走一件反证⛔ 等于少跑，那⛔ 叫全绿。",
   "floors": {
     "wall_gate_rules": 15,
-    "wall_suite": 19,
-    "drift_suite": 30,
+    "wall_suite": 33,
+    "drift_suite": 37,
     "verify_suite": 21,
     "worker_contract_rules": 15,
     "worker_suite": 38
