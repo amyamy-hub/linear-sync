@@ -260,6 +260,22 @@ def main():
         "旧版 if drift 分支里就 sys.exit(1)，「N 项没测到」永远到不了")
     req("C12c2 两桶在场时退出码仍由漂移决定（1）", c == 1, f"实得 {c}")
 
+    # ---- 组 13（09-30 自查挖出的覆盖洞）：真实登记必须与检测器版本配对 ----
+    # run_case() 造的 ledger 把 detector_min_version 现取 mod.TOOL_REVISION ⇒ 配对闸在测试里恒真；
+    # 于是它自己错误信息里那句「改检测器忘改登记 ⇒ 自锁死或假绿灯」，35 条断言一条都测不到。
+    reg = None
+    reg_path = os.path.join(os.path.dirname(HERE), "drift", "known_good.json")
+    try:
+        with open(reg_path, encoding="utf-8") as _rf:
+            reg = json.loads(_rf.read())
+    except (OSError, ValueError) as ex:
+        req("C13a 读得到仓里的 known_good.json", False, f"{type(ex).__name__}")
+    if reg is not None:
+        got = reg.get("detector_min_version")
+        req("C13a 登记里有 detector_min_version（⛔ 靠两边都缺字段蒙对）", bool(got), repr(got))
+        req("C13b 登记值与 TOOL_REVISION 全等（配对闸是字符串相等，不是 >=）", got == mod.TOOL_REVISION,
+            f"登记={got!r} 检测器={mod.TOOL_REVISION!r}")
+
     bad_count = len([1 for _, v in _results if not v])
     names = ", ".join(n for n, v in _results if not v)
     print(f"\n合计 {len(_results)} 条，失败 {bad_count} 条" + ("" if not bad_count else f"：{names}"))
