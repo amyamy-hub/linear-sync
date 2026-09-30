@@ -82,7 +82,8 @@ def load_tool(path, name):
 
 
 def run_case(mod, slot_etag=ETAG, ver_etag=ETAG, versions_total=1, items=None,
-             download=(None, "未调用"), expect_blob="", min_version=None):
+             download=(None, "未调用"), expect_blob="", min_version=None,
+             slot_present=True, slot_total=None):
     """把检测器的两只取数手换成合成的，跑它一遍 main()，拿回 (退出码, 输出, 调用序列)。
        ⛔ 联网：任何没预料到的只读路径都当场抛，⛔ 静默放过。"""
     if items is None:
@@ -97,7 +98,11 @@ def run_case(mod, slot_etag=ETAG, ver_etag=ETAG, versions_total=1, items=None,
                                                 "versions": [{"version_id": "v-uuid-1", "percent": 100}]}]},
                     "result_info": {"total_count": 1}}
         if path.endswith("/workers/scripts") or "scripts?per_page" in path:
-            return {"success": True, "errors": [], "result": [{"id": "linear-sync", "etag": slot_etag}]}
+            rows = [{"id": "linear-sync", "etag": slot_etag}] if slot_present else [{"id": "other", "etag": slot_etag}]
+            fake = {"success": True, "errors": [], "result": rows}
+            if slot_total is not None:
+                fake["result_info"] = {"total_count": slot_total}
+            return fake
         if "/versions?per_page" in path:
             ri = {"total_count": versions_total} if versions_total is not None else {}
             return {"success": True, "errors": [], "result": {"items": items}, "result_info": ri}
@@ -239,6 +244,21 @@ def main():
         moved = [i + 1 for i, l in enumerate(pin_mut.split("\n")) if EXEMPT_MARK in l]
         req(f"C11c 插一行后 C11b 必须转红（现在给 L{moved}）", moved != [PIN_EXEMPT_LINE],
             "插了行号还⛔ 变 ⇒ C11b 是恒真的假闸，这条验收⛔ 算做过")
+
+    # ---- 组 12（09-30 横幅 67 靶）：槽位段归桶 + 终局两桶都要印得出来 ----
+    c, o, _ = run_case(mod, slot_present=False, slot_total=None)
+    req("C12a 列表无完整性判据且目标不在 ⇒ 记 unverified、⛔ 报漂移",
+        ("没测到" in o) and ("⚠️ 漂移" not in o),
+        "旧版把「这一页没读到」当漂移，还给出一条「改登记值」指令 —— 反向引导")
+    req("C12a2 该情形退出码 0（未报漂移）", c == 0, f"实得 {c}")
+    c, o, _ = run_case(mod, slot_present=False, slot_total=1)
+    req("C12b 列表读全仍找不到 ⇒ 真漂移", ("疑似已被删除" in o) and c == 1, f"exit={c}")
+    c, o, _ = run_case(mod, slot_etag=OTHER_ETAG, versions_total=None,
+                       download=(PART5, None), expect_blob=BLOB_5)
+    req("C12c 漂移与没测到同时在场 ⇒ 两句都要印出来",
+        ("⚠️ 漂移" in o) and ("没测到" in o),
+        "旧版 if drift 分支里就 sys.exit(1)，「N 项没测到」永远到不了")
+    req("C12c2 两桶在场时退出码仍由漂移决定（1）", c == 1, f"实得 {c}")
 
     bad_count = len([1 for _, v in _results if not v])
     names = ", ".join(n for n, v in _results if not v)
