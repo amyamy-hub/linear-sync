@@ -236,14 +236,27 @@ def main():
     slot_rows = slot.get("result") or []
     if isinstance(slot_rows, dict):
         slot_rows = slot_rows.get("scripts") or []
+    slot_ri = slot.get("result_info") or {}
+    slot_read_full = slot_ri.get("total_count") == len(slot_rows)
     slot_row = next((s for s in slot_rows if s.get("id") == name), None)
     if slot_row is None:
-        drift.append("scripts 列表里找不到该 Worker 槽位 => 槽位 etag 没测到（⛔ 当成「没有」）")
+        # 两问分开（横幅 67 ③）：「这一页读全了吗」靠 result_info，「目标在不在」靠 slot_row。
+        # 该端点实测不给 total_count（minimax ZC-2 式二 4 发 ＋ 审计位裸 HTTP 两侧同读）
+        # ⇒「这一页没有」永远 ≠「槽位不存在」：归 unverified，⛔ 归 drift。
+        if not slot_read_full:
+            unverified.append(f"scripts 信封给不出「这一页读全了吗」"
+                              f"（total_count={slot_ri.get('total_count')!r}、本页 {len(slot_rows)}）"
+                              "⇒ 目标不在本页 ≠ 槽位不存在；此项记**没测到**，"
+                              "⛔ 拿「改登记值」代替它")
+        else:
+            drift.append(f"scripts 列表已读全（total_count={slot_ri.get('total_count')}）"
+                          " 仍找不到该 Worker 槽位 => 疑似已被删除（真漂移：登记前提破了）")
     else:
         slot_etag = slot_row.get("etag") or ""
-        print("· 槽位 etag      : %s…" % slot_etag[:16])
+        print(f"· 槽位 etag      : {slot_etag[:16]}…")
         if not slot_etag:
-            drift.append("槽位记录里没有 etag 字段 => 字节判据此刻不可用；没测到 ≠ 没有")
+            unverified.append("槽位记录里没有 etag 字段 => 字节判据此刻不可用；"
+                              "没测到 ≠ 没有，⛔ 拿「改登记值」代替它")
         elif slot_etag == etag:
             slot_ok = True
         elif slot_etag != etag:
@@ -334,20 +347,24 @@ def main():
                          % (len(undeployed), MAX_DETAIL_GETS, MAX_DETAIL_GETS))
 
     print()
+    # 终局两桶都要印得出（横幅 67 ③）：旧版 `if drift: … sys.exit(1)` 在前，
+    # 只要有任何一条漂移，「还有 N 项没测到」这句就永远到不了 ——
+    # 操作者只看到「改登记值」，于是取数失败被翻译成一次污染登记基线的动作。
     if drift:
         for d in drift:
-            print("⚠️ 漂移：%s" % d)
+            print(f"⚠️ 漂移：{d}")
         print("\n判定：需要人看。登记值见 drift/known_good.json；确认线上正确后**改登记值**而不是忽略告警。")
-        sys.exit(1)
     if unverified:
-        print("判定：本轮未报漂移，但有 %d 项**没测到**（≠ 已验证）：" % len(unverified))
+        if not drift:
+            print("判定：本轮未报漂移，但有 %d 项**没测到**（≠ 已验证）：" % len(unverified))
+        else:
+            print("判定：另有 %d 项**没测到**（≠ 已验证）——⛔ 用上面那句「改登记值」代替它们：" % len(unverified))
         for u in unverified:
-            print("  · 没测到：%s" % u)
+            print(f"  · 没测到：{u}")
         print("  ⇒ 这些格子⛔ 算通过。要补齐：deployments/versions 信封形态、或带 --expect-blob 现读仓库 blob 再跑。")
-    else:
+    elif not drift:
         print("判定：未报漂移，且本轮列出的判据**都取到了读数**（etag / 槽位 etag / 源块 blob 对撞 / 绑定集合 / 未部署版本）。")
-    sys.exit(0)
-
+    sys.exit(1 if drift else 0)
 
 if __name__ == "__main__":
     main()
