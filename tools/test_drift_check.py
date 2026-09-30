@@ -266,7 +266,8 @@ def main():
     reg = None
     reg_path = os.path.join(os.path.dirname(HERE), "drift", "known_good.json")
     try:
-        reg = json.loads(open(reg_path, encoding="utf-8").read())
+        with open(reg_path, encoding="utf-8") as _rf:
+            reg = json.loads(_rf.read())
     except (OSError, ValueError) as ex:
         req("C13a 读得到仓里的 known_good.json", False, f"{type(ex).__name__}")
     if reg is not None:
